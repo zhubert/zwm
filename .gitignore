@@ -1,0 +1,30 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Build output
+.debug/
+.release/
+.deps/
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+._*
+
+# Logs
+*.log
+
+# Editor state
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

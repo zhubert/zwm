@@ -1,0 +1,35 @@
+.PHONY: build run test install uninstall clean release
+
+build:
+	swift build
+
+run: build
+	.build/debug/zwm-server
+
+test:
+	./run-tests.sh
+
+release:
+	./build-release.sh
+
+install: release
+	cp -r .release/ZWM.app /Applications/
+	sudo cp .release/zwm /usr/local/bin/
+	@if [ ! -f ~/.zwm.toml ] && [ ! -f ~/.config/zwm/zwm.toml ]; then \
+		cp resources/default-config.toml ~/.zwm.toml; \
+		echo "Installed default config to ~/.zwm.toml"; \
+	fi
+	@echo "Installed ZWM.app to /Applications/"
+	@echo "Installed zwm CLI to /usr/local/bin/"
+	@echo ""
+	@echo "Run: open /Applications/ZWM.app"
+	@echo "Then grant Accessibility in System Settings."
+
+uninstall:
+	rm -rf /Applications/ZWM.app
+	sudo rm -f /usr/local/bin/zwm
+	@echo "Uninstalled. Config files (~/.zwm.toml) left in place."
+
+clean:
+	swift package clean
+	rm -rf .release
