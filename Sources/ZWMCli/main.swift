@@ -59,6 +59,7 @@ func printUsage() {
       layout <type>          Set layout (horizontal, vertical)
       close                  Close focused window
       fullscreen             Toggle fullscreen
+      debug-tree             Dump tree structure for debugging
       reload-config          Reload configuration
 
     Options:

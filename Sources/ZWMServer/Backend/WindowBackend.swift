@@ -22,6 +22,9 @@ public protocol WindowBackend: Sendable {
     /// Get current monitor info.
     func monitors() async -> [MonitorInfo]
 
+    /// Check if a window still exists on screen (quick CGWindowList check).
+    func windowExists(_ windowId: UInt32) async -> Bool
+
     /// Subscribe to window events. The handler is called for each event.
     func observe(_ handler: @escaping @Sendable (WindowEvent) -> Void) async throws
 }

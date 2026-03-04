@@ -14,6 +14,12 @@ public final class ServerEngine: @unchecked Sendable {
     private var _config: EngineConfig
     var pendingClose: UInt32?
 
+    /// Metadata cache for window info (populated during start/windowCreated, used on unminimize).
+    private var windowMetadata: [UInt32: (appName: String, title: String, pid: Int32)] = [:]
+
+    /// Window IDs we recently positioned — ignore move/resize events from these to suppress feedback loops.
+    private var recentlySetWindowIds: Set<UInt32> = []
+
     public init(backend: any WindowBackend, config: EngineConfig = EngineConfig()) {
         self.backend = backend
         self.eventQueue = EventQueue()
@@ -73,6 +79,11 @@ public final class ServerEngine: @unchecked Sendable {
                         )
                     }
                 }
+            }
+
+            // Populate metadata cache for all discovered windows
+            for window in windows {
+                windowMetadata[window.windowId] = (appName: window.appName, title: window.title, pid: window.pid)
             }
 
             // Add discovered windows to the first workspace using BSP
@@ -151,6 +162,10 @@ public final class ServerEngine: @unchecked Sendable {
             let validSubrole = subrole.isEmpty || subrole == "AXStandardWindow"
             let largeEnough = frame.width >= DiscoveredWindow.minManagedSize && frame.height >= DiscoveredWindow.minManagedSize
             guard validSubrole && largeEnough else { break }
+            // Deduplicate: skip if already in tree
+            guard findNodeByWindowId(windowId) == nil else { break }
+            // Cache metadata
+            windowMetadata[windowId] = (appName: appName, title: title, pid: pid)
             if let wsId = activeWorkspaceId() {
                 // BSP: split the focused window if one exists and is tiling
                 if let focusedId = tree.focusedWindowId,
@@ -169,12 +184,15 @@ public final class ServerEngine: @unchecked Sendable {
                         inParent: wsId
                     )
                 }
-                // Apply window rules to newly created window
+                // Set focus on new window
                 if let nodeId = tree.allWindows.first(where: { $0.windowId == windowId })?.id {
+                    tree = tree.setFocus(nodeId)
+                    // Apply window rules to newly created window
                     applyWindowRules(nodeId: nodeId, appName: appName, title: title)
                 }
             }
         case .windowDestroyed(let windowId):
+            windowMetadata.removeValue(forKey: windowId)
             if let nodeId = findNodeByWindowId(windowId) {
                 tree = tree.removeNode(nodeId)
             }
@@ -182,32 +200,47 @@ public final class ServerEngine: @unchecked Sendable {
             if let nodeId = findNodeByWindowId(windowId) {
                 tree = tree.setFocus(nodeId)
             }
+        case .windowMoved(let windowId), .windowResized(let windowId):
+            // Suppress feedback loop: ignore events for windows we just repositioned
+            if recentlySetWindowIds.contains(windowId) { break }
+            // Otherwise no tree mutation needed
         case .windowMinimized(let windowId):
             if let nodeId = findNodeByWindowId(windowId) {
                 tree = tree.removeNode(nodeId)
             }
         case .windowUnminimized(let windowId):
+            // Deduplicate: skip if already in tree
+            guard findNodeByWindowId(windowId) == nil else { break }
+            let meta = windowMetadata[windowId]
+            let appPid = meta?.pid ?? 0
+            let appName = meta?.appName ?? ""
+            let title = meta?.title ?? ""
             if let wsId = activeWorkspaceId() {
                 if let focusedId = tree.focusedWindowId,
                    tree.workspaceContaining(focusedId)?.id == wsId,
                    let focusedWin = tree.windowNode(focusedId),
                    focusedWin.state == .tiling {
                     tree = tree.insertWindowBSP(
-                        windowId: windowId, appPid: 0,
-                        appName: "", title: "",
+                        windowId: windowId, appPid: appPid,
+                        appName: appName, title: title,
                         nearWindowId: focusedId
                     )
                 } else {
                     tree = tree.insertWindow(
-                        windowId: windowId, appPid: 0,
-                        appName: "", title: "",
+                        windowId: windowId, appPid: appPid,
+                        appName: appName, title: title,
                         inParent: wsId
                     )
+                }
+                // Set focus on unminimized window
+                if let nodeId = tree.allWindows.first(where: { $0.windowId == windowId })?.id {
+                    tree = tree.setFocus(nodeId)
                 }
             }
         case .appTerminated(let pid):
             let toRemove = tree.allWindows.filter { $0.appPid == pid }
             for w in toRemove {
+                windowMetadata.removeValue(forKey: w.windowId)
                 tree = tree.removeNode(w.id)
             }
         default:
@@ -248,6 +281,7 @@ public final class ServerEngine: @unchecked Sendable {
         case "workspace": return workspaceCommand(request.args)
         case "move-to-workspace": return moveToWorkspaceCommand(request.args)
         case "layout": return layoutCommand(request.args)
+        case "debug-tree": return debugTreeCommand()
         case "close": return closeCommand()
         case "fullscreen": return fullscreenCommand()
         case "reload-config": return reloadConfigCommand()
@@ -259,13 +293,31 @@ public final class ServerEngine: @unchecked Sendable {
     // MARK: - Reconciliation
 
     private func reconcile(tree: TreeState, monitors: [MonitorInfo]) async {
+        // Validate all windows in the tree still exist; remove stale ones
+        var validatedTree = tree
+        let allWindows = tree.allWindows
+        var removedAny = false
+        for win in allWindows {
+            let exists = await backend.windowExists(win.windowId)
+            if !exists {
+                if let nodeId = validatedTree.allWindows.first(where: { $0.windowId == win.windowId })?.id {
+                    validatedTree = validatedTree.removeNode(nodeId)
+                    removedAny = true
+                    print("zwm: reconcile: removed stale window \(win.windowId)")
+                }
+            }
+        }
+        if removedAny {
+            withLock { self.tree = validatedTree }
+        }
+
         let gaps = withLock { _config.gaps }
-        let newLayout = layoutTree(tree, monitors: monitors, gaps: gaps)
+        let newLayout = layoutTree(validatedTree, monitors: monitors, gaps: gaps)
 
         let (oldLayout, oldFocus, newFocus) = withLock { () -> (LayoutResult, UInt32?, UInt32?) in
             let old = lastLayout
             let oldF = focusedMacWindowId(self.tree)
-            let newF = focusedMacWindowId(tree)
+            let newF = focusedMacWindowId(validatedTree)
             lastLayout = newLayout
             return (old, oldF, newF)
         }
@@ -273,14 +325,22 @@ public final class ServerEngine: @unchecked Sendable {
         let diff = diffLayouts(
             old: oldLayout, new: newLayout,
             oldFocusedWindowId: oldFocus, newFocusedWindowId: newFocus,
-            tree: tree
+            tree: validatedTree
         )
 
         if !diff.isEmpty {
             print("zwm: reconcile diff: \(diff.toSet.count) frame changes, focus=\(String(describing: diff.toFocus))")
         }
 
-        guard !diff.isEmpty else { return }
+        guard !diff.isEmpty else {
+            // Clear feedback suppression set even when no diff
+            withLock { recentlySetWindowIds.removeAll() }
+            return
+        }
+
+        // Track which windows we're about to reposition (for feedback suppression)
+        let setIds = Set(diff.toSet.map(\.windowId))
+        withLock { recentlySetWindowIds = setIds }
 
         for change in diff.toSet {
             print("zwm: setFrame(\(change.windowId), \(change.frame))")
