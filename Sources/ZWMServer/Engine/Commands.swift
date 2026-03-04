@@ -247,6 +247,49 @@ extension ServerEngine {
         return CommandResponse(exitCode: 0, stdout: "", stderr: "")
     }
 
+    // MARK: - Debug
+
+    func debugTreeCommand() -> CommandResponse {
+        let tree = currentTree
+        var lines: [String] = []
+        lines.append("focused: \(tree.focusedWindowId.map { "\($0)" } ?? "nil")")
+        lines.append("workspaceMRU: \(tree.workspaceMRU)")
+        for wsId in tree.workspaceIds {
+            guard let ws = tree.workspaceNode(wsId) else { continue }
+            let monStr = ws.monitorId.map { "monitor=\($0)" } ?? "no-monitor"
+            lines.append("workspace \"\(ws.name)\" (id=\(ws.id), \(monStr), layout=\(ws.layout))")
+            for childId in ws.childIds {
+                dumpNode(childId, tree: tree, indent: "  ", lines: &lines)
+            }
+            if !ws.floatingWindowIds.isEmpty {
+                lines.append("  floating:")
+                for fid in ws.floatingWindowIds {
+                    dumpNode(fid, tree: tree, indent: "    ", lines: &lines)
+                }
+            }
+        }
+        return CommandResponse(exitCode: 0, stdout: lines.joined(separator: "\n") + "\n", stderr: "")
+    }
+
+    private func dumpNode(_ id: NodeId, tree: TreeState, indent: String, lines: inout [String]) {
+        guard let node = tree.node(id) else {
+            lines.append("\(indent)[missing node \(id)]")
+            return
+        }
+        switch node {
+        case .window(let w):
+            let focused = tree.focusedWindowId == w.id ? " *" : ""
+            lines.append("\(indent)window wid=\(w.windowId) app=\"\(w.appName)\" title=\"\(w.title)\" state=\(w.state) weight=\(w.weight)\(focused)")
+        case .tilingContainer(let tc):
+            lines.append("\(indent)container (id=\(tc.id), layout=\(tc.layout), weight=\(tc.weight))")
+            for childId in tc.childIds {
+                dumpNode(childId, tree: tree, indent: indent + "  ", lines: &lines)
+            }
+        case .workspace:
+            lines.append("\(indent)[unexpected workspace at \(id)]")
+        }
+    }
+
     // MARK: - Config
 
     func reloadConfigCommand() -> CommandResponse {

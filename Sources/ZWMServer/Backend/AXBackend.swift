@@ -166,6 +166,15 @@ extension AXBackend: WindowBackend {
         )
     }
 
+    public func windowExists(_ windowId: UInt32) async -> Bool {
+        guard let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowId) as? [[String: Any]],
+              let windowInfo = info.first,
+              let wid = windowInfo[kCGWindowNumber as String] as? UInt32 else {
+            return false
+        }
+        return wid == windowId
+    }
+
     public func observe(_ handler: @escaping @Sendable (WindowEvent) -> Void) async throws {
         withLock { eventHandler = handler }
 
