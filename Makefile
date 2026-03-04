@@ -1,4 +1,4 @@
-.PHONY: build run test install uninstall clean release
+.PHONY: build run test install uninstall clean release reset-accessibility
 
 build:
 	swift build
@@ -12,7 +12,11 @@ test:
 release:
 	./build-release.sh
 
-install: release
+reset-accessibility:
+	tccutil reset Accessibility com.zwm.app || true
+	@echo "Reset Accessibility grant for ZWM. You will be re-prompted on next launch."
+
+install: release reset-accessibility
 	cp -r .release/ZWM.app /Applications/
 	sudo cp .release/zwm /usr/local/bin/
 	@if [ ! -f ~/.zwm.toml ] && [ ! -f ~/.config/zwm/zwm.toml ]; then \
