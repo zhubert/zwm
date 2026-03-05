@@ -406,6 +406,39 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     #expect(mainNode.state == .tiling)
 }
 
+// MARK: - Frame readback and retry
+
+@Test func constrainedWindowGetsCentered() async throws {
+    let (engine, backend) = try await makeEngine(windows: [window(1), window(2)])
+    backend.resetRecordedCalls()
+
+    // Simulate window 1 constraining itself to be smaller than requested
+    backend.setFrameOverride(1, CGRect(x: 0, y: 0, width: 940, height: 1060))
+
+    // Trigger a layout change so diff engine produces setFrame calls
+    _ = await engine.execute(CommandRequest(command: "layout", args: ["vertical"]))
+
+    // Should have issued at least 2 setFrame calls for window 1: initial + centering
+    let calls = backend.setFrameCalls.filter { $0.windowId == 1 }
+    #expect(calls.count >= 2)
+    backend.clearFrameOverrides()
+}
+
+@Test func positionMismatchTriggersRetry() async throws {
+    let (engine, backend) = try await makeEngine(windows: [window(1), window(2)])
+    backend.resetRecordedCalls()
+
+    // Simulate window 1 reporting a different position than requested
+    backend.setFrameOverride(1, CGRect(x: 50, y: 50, width: 1920, height: 540))
+
+    _ = await engine.execute(CommandRequest(command: "layout", args: ["vertical"]))
+
+    // Should have retried: initial setFrame + retry setFrame
+    let calls = backend.setFrameCalls.filter { $0.windowId == 1 }
+    #expect(calls.count >= 2)
+    backend.clearFrameOverrides()
+}
+
 // MARK: - Periodic validation
 
 @Test func periodicValidationRemovesGoneWindows() async throws {

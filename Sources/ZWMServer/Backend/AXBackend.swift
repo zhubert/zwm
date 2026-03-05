@@ -85,15 +85,25 @@ extension AXBackend: WindowBackend {
         // Set position first, then size
         var point = CGPoint(x: frame.origin.x, y: frame.origin.y)
         guard let posValue = AXValueCreate(.cgPoint, &point) else { return }
-        AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, posValue)
+        let posResult = AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, posValue)
+        if posResult != .success {
+            print("zwm: setFrame(\(windowId)): position set failed: \(posResult.rawValue)")
+        }
 
         var size = CGSize(width: frame.size.width, height: frame.size.height)
         guard let sizeValue = AXValueCreate(.cgSize, &size) else { return }
-        AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue)
+        let sizeResult = AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue)
+        if sizeResult != .success {
+            print("zwm: setFrame(\(windowId)): size set failed: \(sizeResult.rawValue)")
+        }
 
         // Double-set trick: some apps constrain on the first call
         AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, posValue)
         AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue)
+
+        if posResult != .success && sizeResult != .success {
+            throw AXBackendError.setFrameFailed(windowId: windowId, code: posResult.rawValue)
+        }
     }
 
     public func getFrame(_ windowId: UInt32) async throws -> CGRect {
@@ -405,4 +415,5 @@ extension AXBackend: WindowBackend {
 public enum AXBackendError: Error, Sendable {
     case windowNotFound(UInt32)
     case accessibilityNotEnabled
+    case setFrameFailed(windowId: UInt32, code: Int32)
 }
