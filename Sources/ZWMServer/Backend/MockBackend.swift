@@ -11,6 +11,16 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
 
     // MARK: - Test setup
 
+    /// Set a frame override that getFrame will return instead of the last setFrame value.
+    /// Simulates a window that constrains itself (e.g. Terminal snapping to character cells).
+    public func setFrameOverride(_ windowId: UInt32, _ frame: CGRect) {
+        lock.withLock { state.frameOverrides[windowId] = frame }
+    }
+
+    public func clearFrameOverrides() {
+        lock.withLock { state.frameOverrides.removeAll() }
+    }
+
     public func addWindow(_ window: DiscoveredWindow) {
         lock.withLock { state.windows[window.windowId] = window }
     }
@@ -67,8 +77,12 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
     }
 
     public func getFrame(_ windowId: UInt32) async throws -> CGRect {
-        // Return the last frame that was set, or the discovered window's frame
         lock.withLock {
+            // If a frame override is set, return that (simulates constrained windows)
+            if let override = state.frameOverrides[windowId] {
+                return override
+            }
+            // Otherwise return the last frame that was set, or the discovered window's frame
             if let last = state.setFrameCalls.last(where: { $0.windowId == windowId }) {
                 return last.frame
             }
@@ -95,6 +109,10 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
     public func observe(_ handler: @escaping @Sendable (WindowEvent) -> Void) async throws {
         lock.withLock { state.handler = handler }
     }
+
+    public func checkObserverHealth() async -> Int {
+        0
+    }
 }
 
 private struct MockState {
@@ -105,6 +123,7 @@ private struct MockState {
     var focusCalls: [UInt32] = []
     var closeCalls: [UInt32] = []
     var minimizeCalls: [(windowId: UInt32, minimized: Bool)] = []
+    var frameOverrides: [UInt32: CGRect] = [:]
 }
 
 /// Lightweight lock wrapper around os_unfair_lock.

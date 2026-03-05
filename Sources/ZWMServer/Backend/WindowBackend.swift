@@ -27,6 +27,10 @@ public protocol WindowBackend: Sendable {
 
     /// Subscribe to window events. The handler is called for each event.
     func observe(_ handler: @escaping @Sendable (WindowEvent) -> Void) async throws
+
+    /// Check for stale AX observers and re-register them.
+    /// Returns the number of observers that were re-registered.
+    func checkObserverHealth() async -> Int
 }
 
 /// A window discovered during enumeration.

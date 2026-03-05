@@ -13,6 +13,11 @@ public final class AXBackend: @unchecked Sendable {
     /// Track known window IDs per PID so we can detect which window was
     /// destroyed when _AXUIElementGetWindow returns 0 on invalid elements.
     private var knownWindowsByPid: [pid_t: Set<UInt32>] = [:]
+    /// Cache AXUIElement references by window ID to avoid O(n) scans.
+    /// Invalidated on window creation/destruction.
+    private var elementCache: [UInt32: (pid: pid_t, element: AXUIElement)] = [:]
+    /// Track last event time per PID to detect stale observers.
+    private var lastEventByPid: [pid_t: Date] = [:]
 
     public init() {}
 
@@ -51,8 +56,11 @@ extension AXBackend: WindowBackend {
                     continue
                 }
 
-                // Track this window so we can detect destroys
-                withLock { _ = knownWindowsByPid[app.pid, default: []].insert(windowId) }
+                // Track this window so we can detect destroys, and cache the element
+                withLock {
+                    _ = knownWindowsByPid[app.pid, default: []].insert(windowId)
+                    elementCache[windowId] = (pid: app.pid, element: windowElement)
+                }
 
                 let frame = axFrame(windowElement)
                 let isMinimized = axBoolAttribute(windowElement, kAXMinimizedAttribute as CFString)
@@ -85,15 +93,25 @@ extension AXBackend: WindowBackend {
         // Set position first, then size
         var point = CGPoint(x: frame.origin.x, y: frame.origin.y)
         guard let posValue = AXValueCreate(.cgPoint, &point) else { return }
-        AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, posValue)
+        let posResult = AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, posValue)
+        if posResult != .success {
+            print("zwm: setFrame(\(windowId)): position set failed: \(posResult.rawValue)")
+        }
 
         var size = CGSize(width: frame.size.width, height: frame.size.height)
         guard let sizeValue = AXValueCreate(.cgSize, &size) else { return }
-        AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue)
+        let sizeResult = AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue)
+        if sizeResult != .success {
+            print("zwm: setFrame(\(windowId)): size set failed: \(sizeResult.rawValue)")
+        }
 
         // Double-set trick: some apps constrain on the first call
         AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, posValue)
         AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue)
+
+        if posResult != .success && sizeResult != .success {
+            throw AXBackendError.setFrameFailed(windowId: windowId, code: posResult.rawValue)
+        }
     }
 
     public func getFrame(_ windowId: UInt32) async throws -> CGRect {
@@ -226,6 +244,53 @@ extension AXBackend: WindowBackend {
         }
     }
 
+    public func checkObserverHealth() async -> Int {
+        let staleCutoff = Date().addingTimeInterval(-30)
+        let observedPids = withLock { Array(appObservers.keys) }
+
+        // Check which apps are still running
+        let runningPids: Set<pid_t> = await MainActor.run {
+            Set(NSWorkspace.shared.runningApplications
+                .filter { $0.activationPolicy == .regular }
+                .map { $0.processIdentifier })
+        }
+
+        var reregistered = 0
+        for pid in observedPids {
+            // If app is no longer running, clean up
+            guard runningPids.contains(pid) else {
+                print("zwm: health: app \(pid) terminated without notification, cleaning up")
+                stopObservingApp(pid)
+                continue
+            }
+
+            // Check if observer has gone stale (no events in 30s despite app running)
+            let lastEvent = withLock { lastEventByPid[pid] }
+            if let last = lastEvent, last < staleCutoff {
+                // Verify the observer is still functional by checking if we can read the app's windows
+                let appElement = AXUIElementCreateApplication(pid)
+                if axArrayAttribute(appElement, kAXWindowsAttribute) == nil {
+                    print("zwm: health: observer for pid \(pid) appears stale, re-registering")
+                    stopObservingApp(pid)
+                    startObservingApp(pid)
+                    reregistered += 1
+                }
+            }
+        }
+
+        // Check for new apps that we're not observing
+        for pid in runningPids {
+            let isObserved = withLock { appObservers[pid] != nil }
+            if !isObserved {
+                print("zwm: health: new app \(pid) not observed, registering")
+                startObservingApp(pid)
+                reregistered += 1
+            }
+        }
+
+        return reregistered
+    }
+
     // MARK: - AX Observer per app
 
     private func startObservingApp(_ pid: pid_t) {
@@ -269,7 +334,16 @@ extension AXBackend: WindowBackend {
     }
 
     private func stopObservingApp(_ pid: pid_t) {
-        let observer = withLock { appObservers.removeValue(forKey: pid) }
+        let observer = withLock { () -> AXObserver? in
+            let obs = appObservers.removeValue(forKey: pid)
+            // Remove cached elements for all windows of this app
+            if let windowIds = knownWindowsByPid.removeValue(forKey: pid) {
+                for wid in windowIds {
+                    elementCache.removeValue(forKey: wid)
+                }
+            }
+            return obs
+        }
         if let observer {
             CFRunLoopRemoveSource(
                 CFRunLoopGetMain(),
@@ -286,12 +360,17 @@ extension AXBackend: WindowBackend {
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)
 
+        withLock { lastEventByPid[pid] = Date() }
+
         print("zwm: AX notification: \(notification) windowId=\(windowId) pid=\(pid)")
 
         switch notification {
         case kAXWindowCreatedNotification:
             if windowId != 0 {
-                withLock { _ = knownWindowsByPid[pid, default: []].insert(windowId) }
+                withLock {
+                    _ = knownWindowsByPid[pid, default: []].insert(windowId)
+                    elementCache[windowId] = (pid: pid, element: element)
+                }
                 let appName = NSRunningApplication(processIdentifier: pid)?.localizedName ?? ""
                 let title = axStringAttribute(element, kAXTitleAttribute) ?? ""
                 let subrole = axStringAttribute(element, kAXSubroleAttribute) ?? ""
@@ -300,7 +379,10 @@ extension AXBackend: WindowBackend {
             }
         case kAXUIElementDestroyedNotification:
             if windowId != 0 {
-                withLock { _ = knownWindowsByPid[pid, default: []].remove(windowId) }
+                withLock {
+                    _ = knownWindowsByPid[pid, default: []].remove(windowId)
+                    elementCache.removeValue(forKey: windowId)
+                }
                 emit(.windowDestroyed(windowId: windowId))
             }
             // When windowId==0, the destroyed element is not a window (e.g. a tab).
@@ -328,8 +410,22 @@ extension AXBackend: WindowBackend {
         handler?(event)
     }
 
-    /// Find the AXUIElement for a given CGWindowID by scanning all regular apps.
+    /// Find the AXUIElement for a given CGWindowID.
+    /// Uses cached element first; falls back to a full scan if cache misses.
     private func findWindowElement(_ windowId: UInt32) async -> AXUIElement? {
+        // Try cache first — O(1)
+        let cached = withLock { elementCache[windowId] }
+        if let cached {
+            // Validate the cached element is still valid
+            var wid: UInt32 = 0
+            if _AXUIElementGetWindow(cached.element, &wid) == .success, wid == windowId {
+                return cached.element
+            }
+            // Cache entry is stale — remove it
+            withLock { _ = elementCache.removeValue(forKey: windowId) }
+        }
+
+        // Full scan fallback — O(n)
         let pids: [pid_t] = await MainActor.run {
             NSWorkspace.shared.runningApplications
                 .filter { $0.activationPolicy == .regular }
@@ -341,6 +437,8 @@ extension AXBackend: WindowBackend {
             for win in windows {
                 var wid: UInt32 = 0
                 if _AXUIElementGetWindow(win, &wid) == .success, wid == windowId {
+                    // Populate cache for next time
+                    withLock { elementCache[windowId] = (pid: pid, element: win) }
                     return win
                 }
             }
@@ -405,4 +503,5 @@ extension AXBackend: WindowBackend {
 public enum AXBackendError: Error, Sendable {
     case windowNotFound(UInt32)
     case accessibilityNotEnabled
+    case setFrameFailed(windowId: UInt32, code: Int32)
 }

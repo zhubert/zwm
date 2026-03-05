@@ -54,6 +54,14 @@ Task {
     }
 }
 
+// Periodic validation timer — catches missed events, dead observers, state drift
+Task {
+    while true {
+        try? await Task.sleep(nanoseconds: 5_000_000_000) // every 5 seconds
+        await engine.periodicValidation()
+    }
+}
+
 // Set up global keybindings
 let hotkeyManager = HotkeyManager { command in
     let parts = command.split(separator: " ", maxSplits: 1).map(String.init)
@@ -84,7 +92,7 @@ let configPaths = [
     NSString("~/.config/zwm/zwm.toml").expandingTildeInPath,
 ]
 let _watcher = FileWatcher(paths: configPaths) {
-    let newConfig = loadConfigFromFile()
+    let newConfig = loadConfigFromFile(previous: engine.currentConfig)
     engine.setConfig(newConfig)
     hotkeyManager.loadBindings(newConfig.keybindings)
     print("zwm: config reloaded")

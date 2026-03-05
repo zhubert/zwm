@@ -136,6 +136,24 @@ public final class ServerEngine: @unchecked Sendable {
         await syncTreeWithOS(focusWindowId: lastFocusedWindowId)
     }
 
+    /// Force a full sync with the OS, regardless of whether events are pending.
+    /// Called by the periodic validation timer to catch missed events,
+    /// dead observers, or state drift after sleep/wake.
+    public func periodicValidation() async {
+        // Check for stale or dead AX observers and re-register them
+        let reregistered = await backend.checkObserverHealth()
+        if reregistered > 0 {
+            print("zwm: periodic validation re-registered \(reregistered) observer(s)")
+        }
+
+        let windowCountBefore = withLock { tree.allWindows.count }
+        await syncTreeWithOS()
+        let windowCountAfter = withLock { tree.allWindows.count }
+        if windowCountBefore != windowCountAfter {
+            print("zwm: periodic validation corrected window count: \(windowCountBefore) → \(windowCountAfter)")
+        }
+    }
+
     // MARK: - Sync tree with OS
 
     /// Discover all current windows from the OS and sync the tree to match reality.
@@ -298,23 +316,35 @@ public final class ServerEngine: @unchecked Sendable {
 
         for change in diff.toSet {
             print("zwm: setFrame(\(change.windowId), \(change.frame))")
-            try? await backend.setFrame(change.windowId, change.frame)
+            do {
+                try await backend.setFrame(change.windowId, change.frame)
+            } catch {
+                print("zwm: setFrame(\(change.windowId)) failed: \(error)")
+                continue
+            }
 
-            // Read back actual frame — some windows (e.g. Terminal) snap to character
-            // cell boundaries and may be smaller than requested. Center them if so.
-            if let actual = try? await backend.getFrame(change.windowId) {
-                let dw = change.frame.width - actual.width
-                let dh = change.frame.height - actual.height
-                if dw > 1 || dh > 1 {
-                    let centered = CGRect(
-                        x: change.frame.minX + dw / 2,
-                        y: change.frame.minY + dh / 2,
-                        width: actual.width,
-                        height: actual.height
-                    )
-                    print("zwm: centering \(change.windowId): requested=\(change.frame.size) actual=\(actual.size) → \(centered)")
-                    try? await backend.setFrame(change.windowId, centered)
-                }
+            // Read back actual frame to detect constrained windows and validate
+            guard let actual = try? await backend.getFrame(change.windowId) else { continue }
+
+            let dx = abs(change.frame.origin.x - actual.origin.x)
+            let dy = abs(change.frame.origin.y - actual.origin.y)
+            let dw = change.frame.width - actual.width
+            let dh = change.frame.height - actual.height
+
+            if dw > 1 || dh > 1 {
+                // Window is smaller than requested (e.g. Terminal snaps to character cells) — center it
+                let centered = CGRect(
+                    x: change.frame.minX + dw / 2,
+                    y: change.frame.minY + dh / 2,
+                    width: actual.width,
+                    height: actual.height
+                )
+                print("zwm: centering \(change.windowId): requested=\(change.frame.size) actual=\(actual.size) → \(centered)")
+                try? await backend.setFrame(change.windowId, centered)
+            } else if dx > 2 || dy > 2 {
+                // Position is off — retry once
+                print("zwm: position mismatch for \(change.windowId): requested=\(change.frame.origin) actual=\(actual.origin), retrying")
+                try? await backend.setFrame(change.windowId, change.frame)
             }
         }
         if let focusId = diff.toFocus {

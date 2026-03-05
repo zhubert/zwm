@@ -64,16 +64,26 @@ public func parseConfig(_ toml: String) throws -> EngineConfig {
 }
 
 /// Load config from the default file path.
-public func loadConfigFromFile() -> EngineConfig {
+/// If a config file exists but fails to parse, the previous config is preserved
+/// and the error is logged. Falls back to defaults only if no file is found.
+public func loadConfigFromFile(previous: EngineConfig? = nil) -> EngineConfig {
     let paths = [
         NSString("~/.zwm.toml").expandingTildeInPath,
         NSString("~/.config/zwm/zwm.toml").expandingTildeInPath,
     ]
     for path in paths {
-        if let contents = try? String(contentsOfFile: path, encoding: .utf8),
-           let config = try? parseConfig(contents) {
+        guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+        do {
+            let config = try parseConfig(contents)
             return config
+        } catch {
+            print("zwm: config error in \(path): \(error)")
+            // Keep the previous config rather than falling back to defaults
+            if let previous {
+                print("zwm: keeping previous config due to parse error")
+                return previous
+            }
         }
     }
-    return EngineConfig()
+    return previous ?? EngineConfig()
 }
