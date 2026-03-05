@@ -140,6 +140,12 @@ public final class ServerEngine: @unchecked Sendable {
     /// Called by the periodic validation timer to catch missed events,
     /// dead observers, or state drift after sleep/wake.
     public func periodicValidation() async {
+        // Check for stale or dead AX observers and re-register them
+        let reregistered = await backend.checkObserverHealth()
+        if reregistered > 0 {
+            print("zwm: periodic validation re-registered \(reregistered) observer(s)")
+        }
+
         let windowCountBefore = withLock { tree.allWindows.count }
         await syncTreeWithOS()
         let windowCountAfter = withLock { tree.allWindows.count }

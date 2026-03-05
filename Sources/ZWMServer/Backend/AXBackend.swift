@@ -16,6 +16,8 @@ public final class AXBackend: @unchecked Sendable {
     /// Cache AXUIElement references by window ID to avoid O(n) scans.
     /// Invalidated on window creation/destruction.
     private var elementCache: [UInt32: (pid: pid_t, element: AXUIElement)] = [:]
+    /// Track last event time per PID to detect stale observers.
+    private var lastEventByPid: [pid_t: Date] = [:]
 
     public init() {}
 
@@ -242,6 +244,53 @@ extension AXBackend: WindowBackend {
         }
     }
 
+    public func checkObserverHealth() async -> Int {
+        let staleCutoff = Date().addingTimeInterval(-30)
+        let observedPids = withLock { Array(appObservers.keys) }
+
+        // Check which apps are still running
+        let runningPids: Set<pid_t> = await MainActor.run {
+            Set(NSWorkspace.shared.runningApplications
+                .filter { $0.activationPolicy == .regular }
+                .map { $0.processIdentifier })
+        }
+
+        var reregistered = 0
+        for pid in observedPids {
+            // If app is no longer running, clean up
+            guard runningPids.contains(pid) else {
+                print("zwm: health: app \(pid) terminated without notification, cleaning up")
+                stopObservingApp(pid)
+                continue
+            }
+
+            // Check if observer has gone stale (no events in 30s despite app running)
+            let lastEvent = withLock { lastEventByPid[pid] }
+            if let last = lastEvent, last < staleCutoff {
+                // Verify the observer is still functional by checking if we can read the app's windows
+                let appElement = AXUIElementCreateApplication(pid)
+                if axArrayAttribute(appElement, kAXWindowsAttribute) == nil {
+                    print("zwm: health: observer for pid \(pid) appears stale, re-registering")
+                    stopObservingApp(pid)
+                    startObservingApp(pid)
+                    reregistered += 1
+                }
+            }
+        }
+
+        // Check for new apps that we're not observing
+        for pid in runningPids {
+            let isObserved = withLock { appObservers[pid] != nil }
+            if !isObserved {
+                print("zwm: health: new app \(pid) not observed, registering")
+                startObservingApp(pid)
+                reregistered += 1
+            }
+        }
+
+        return reregistered
+    }
+
     // MARK: - AX Observer per app
 
     private func startObservingApp(_ pid: pid_t) {
@@ -311,6 +360,8 @@ extension AXBackend: WindowBackend {
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)
 
+        withLock { lastEventByPid[pid] = Date() }
+
         print("zwm: AX notification: \(notification) windowId=\(windowId) pid=\(pid)")
 
         switch notification {
@@ -371,7 +422,7 @@ extension AXBackend: WindowBackend {
                 return cached.element
             }
             // Cache entry is stale — remove it
-            withLock { elementCache.removeValue(forKey: windowId) }
+            withLock { _ = elementCache.removeValue(forKey: windowId) }
         }
 
         // Full scan fallback — O(n)

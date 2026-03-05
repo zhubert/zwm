@@ -285,7 +285,7 @@ extension ServerEngine {
     // MARK: - Config
 
     func reloadConfigCommand() -> CommandResponse {
-        let newConfig = loadConfigFromFile()
+        let newConfig = loadConfigFromFile(previous: currentConfig)
         setConfig(newConfig)
         return CommandResponse(exitCode: 0, stdout: "Config reloaded\n", stderr: "")
     }

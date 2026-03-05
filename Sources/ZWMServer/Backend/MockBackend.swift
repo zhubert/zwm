@@ -109,6 +109,10 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
     public func observe(_ handler: @escaping @Sendable (WindowEvent) -> Void) async throws {
         lock.withLock { state.handler = handler }
     }
+
+    public func checkObserverHealth() async -> Int {
+        0
+    }
 }
 
 private struct MockState {

@@ -92,7 +92,7 @@ let configPaths = [
     NSString("~/.config/zwm/zwm.toml").expandingTildeInPath,
 ]
 let _watcher = FileWatcher(paths: configPaths) {
-    let newConfig = loadConfigFromFile()
+    let newConfig = loadConfigFromFile(previous: engine.currentConfig)
     engine.setConfig(newConfig)
     hotkeyManager.loadBindings(newConfig.keybindings)
     print("zwm: config reloaded")
