@@ -10,6 +10,9 @@ public protocol WindowBackend: Sendable {
     /// Set the frame (position + size) of a window.
     func setFrame(_ windowId: UInt32, _ frame: CGRect) async throws
 
+    /// Read back the actual frame of a window (after the OS may have constrained it).
+    func getFrame(_ windowId: UInt32) async throws -> CGRect
+
     /// Focus a window (raise + activate its app).
     func focus(_ windowId: UInt32) async throws
 

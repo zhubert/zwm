@@ -307,6 +307,23 @@ public final class ServerEngine: @unchecked Sendable {
         for change in diff.toSet {
             print("zwm: setFrame(\(change.windowId), \(change.frame))")
             try? await backend.setFrame(change.windowId, change.frame)
+
+            // Read back actual frame — some windows (e.g. Terminal) snap to character
+            // cell boundaries and may be smaller than requested. Center them if so.
+            if let actual = try? await backend.getFrame(change.windowId) {
+                let dw = change.frame.width - actual.width
+                let dh = change.frame.height - actual.height
+                if dw > 1 || dh > 1 {
+                    let centered = CGRect(
+                        x: change.frame.minX + dw / 2,
+                        y: change.frame.minY + dh / 2,
+                        width: actual.width,
+                        height: actual.height
+                    )
+                    print("zwm: centering \(change.windowId): requested=\(change.frame.size) actual=\(actual.size) → \(centered)")
+                    try? await backend.setFrame(change.windowId, centered)
+                }
+            }
         }
         if let focusId = diff.toFocus {
             try? await backend.focus(focusId)

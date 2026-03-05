@@ -66,6 +66,16 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
         lock.withLock { state.setFrameCalls.append((windowId: windowId, frame: frame)) }
     }
 
+    public func getFrame(_ windowId: UInt32) async throws -> CGRect {
+        // Return the last frame that was set, or the discovered window's frame
+        lock.withLock {
+            if let last = state.setFrameCalls.last(where: { $0.windowId == windowId }) {
+                return last.frame
+            }
+            return state.windows[windowId]?.frame ?? .zero
+        }
+    }
+
     public func focus(_ windowId: UInt32) async throws {
         lock.withLock { state.focusCalls.append(windowId) }
     }

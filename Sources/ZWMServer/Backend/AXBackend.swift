@@ -96,6 +96,13 @@ extension AXBackend: WindowBackend {
         AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue)
     }
 
+    public func getFrame(_ windowId: UInt32) async throws -> CGRect {
+        guard let element = await findWindowElement(windowId) else {
+            throw AXBackendError.windowNotFound(windowId)
+        }
+        return axFrame(element)
+    }
+
     public func focus(_ windowId: UInt32) async throws {
         guard let element = await findWindowElement(windowId) else {
             throw AXBackendError.windowNotFound(windowId)
