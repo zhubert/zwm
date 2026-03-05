@@ -1,4 +1,4 @@
-.PHONY: build run test install uninstall clean release reset-accessibility
+.PHONY: build run test install uninstall clean release reset-accessibility restart
 
 build:
 	swift build
@@ -23,11 +23,11 @@ install: release reset-accessibility
 		cp resources/default-config.toml ~/.zwm.toml; \
 		echo "Installed default config to ~/.zwm.toml"; \
 	fi
-	@echo "Installed ZWM.app to /Applications/"
-	@echo "Installed zwm CLI to /usr/local/bin/"
-	@echo ""
-	@echo "Run: open /Applications/ZWM.app"
-	@echo "Then grant Accessibility in System Settings."
+	@echo "Installed."
+
+restart: install
+	@pkill -x zwm-server 2>/dev/null; sleep 0.5; open /Applications/ZWM.app
+	@echo "ZWM restarted."
 
 uninstall:
 	rm -rf /Applications/ZWM.app

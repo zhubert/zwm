@@ -21,6 +21,8 @@ if FileManager.default.createFile(atPath: logPath, contents: nil),
     logFile.seekToEndOfFile()
     dup2(logFile.fileDescriptor, STDOUT_FILENO)
     dup2(logFile.fileDescriptor, STDERR_FILENO)
+    // Disable stdout buffering so log lines are written immediately
+    setvbuf(stdout, nil, _IONBF, 0)
 }
 
 // Load configuration

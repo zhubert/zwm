@@ -242,6 +242,11 @@ extension TreeState {
             TreeState.collapseSingleChildContainers(&nodes, startingAt: parentId)
         }
 
+        // If a workspace now has a sole container child, flatten it
+        for wsId in workspaceIds {
+            TreeState.flattenSoleContainerInWorkspace(&nodes, workspaceId: wsId)
+        }
+
         // Clear focus if the focused window was removed
         let newFocus = toRemove.contains(focusedWindowId ?? NodeId(rawValue: 0))
             ? nil : focusedWindowId
@@ -475,6 +480,28 @@ extension TreeState {
         )
     }
 
+    // MARK: - Window ID replacement
+
+    /// Replace a window's macOS window ID in-place, preserving its position in the tree.
+    /// Used when an app (like Ghostty) recycles window IDs on tab close.
+    public func replaceWindowId(_ nodeId: NodeId, newWindowId: UInt32, newTitle: String? = nil) -> TreeState {
+        guard case .window(let win) = nodes[nodeId] else { return self }
+        var nodes = self.nodes
+        nodes[nodeId] = .window(WindowNode(
+            id: win.id, parentId: win.parentId,
+            windowId: newWindowId, appPid: win.appPid,
+            appName: win.appName, title: newTitle ?? win.title,
+            state: win.state, weight: win.weight
+        ))
+        return TreeState(
+            nodes: nodes,
+            workspaceIds: workspaceIds,
+            focusedWindowId: focusedWindowId,
+            workspaceMRU: workspaceMRU,
+            idGenerator: idGenerator
+        )
+    }
+
     // MARK: - Focus
 
     /// Set focus to a window, updating workspace MRU.
@@ -494,6 +521,47 @@ extension TreeState {
     }
 
     // MARK: - Container collapse
+
+    /// If a workspace has exactly one child and it's a tiling container, flatten
+    /// the container's children into the workspace (so they use the workspace's layout).
+    static func flattenSoleContainerInWorkspace(_ nodes: inout [NodeId: Node], workspaceId: NodeId) {
+        guard case .workspace(let ws) = nodes[workspaceId],
+              ws.childIds.count == 1,
+              let onlyChildId = ws.childIds.first,
+              case .tilingContainer(let tc) = nodes[onlyChildId] else { return }
+
+        // Re-parent all container children to the workspace
+        for childId in tc.childIds {
+            switch nodes[childId] {
+            case .window(let w):
+                nodes[childId] = .window(WindowNode(
+                    id: w.id, parentId: workspaceId,
+                    windowId: w.windowId, appPid: w.appPid,
+                    appName: w.appName, title: w.title,
+                    state: w.state, weight: w.weight
+                ))
+            case .tilingContainer(let childTc):
+                nodes[childId] = .tilingContainer(TilingContainerNode(
+                    id: childTc.id, parentId: workspaceId,
+                    childIds: childTc.childIds,
+                    layout: childTc.layout, weight: childTc.weight
+                ))
+            default:
+                break
+            }
+        }
+
+        // Replace workspace's children with the container's children
+        nodes[workspaceId] = .workspace(WorkspaceNode(
+            id: ws.id, name: ws.name,
+            childIds: tc.childIds,
+            floatingWindowIds: ws.floatingWindowIds, monitorId: ws.monitorId,
+            layout: ws.layout
+        ))
+
+        // Remove the container
+        nodes.removeValue(forKey: onlyChildId)
+    }
 
     /// Walk up the tree from `startingAt`, collapsing any tiling container that has
     /// exactly one child (promoting that child to the grandparent) or zero children (removing it).

@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// The central coordinator that owns all state and wires together:
-/// events → tree mutation → layout → diff → backend calls.
+/// events → discover → tree sync → layout → diff → backend calls.
 public final class ServerEngine: @unchecked Sendable {
     private let backend: any WindowBackend
     private let eventQueue: EventQueue
@@ -13,9 +13,6 @@ public final class ServerEngine: @unchecked Sendable {
     private var lastLayout: LayoutResult
     private var _config: EngineConfig
     var pendingClose: UInt32?
-
-    /// Metadata cache for window info (populated during start/windowCreated, used on unminimize).
-    private var windowMetadata: [UInt32: (appName: String, title: String, pid: Int32)] = [:]
 
     /// Window IDs we recently positioned — ignore move/resize events from these to suppress feedback loops.
     private var recentlySetWindowIds: Set<UInt32> = []
@@ -81,12 +78,7 @@ public final class ServerEngine: @unchecked Sendable {
                 }
             }
 
-            // Populate metadata cache for all discovered windows
-            for window in windows {
-                windowMetadata[window.windowId] = (appName: window.appName, title: window.title, pid: window.pid)
-            }
-
-            // Add discovered windows to the first workspace using BSP
+            // Add discovered windows to the first workspace
             if let firstWsId = tree.workspaceIds.first {
                 for window in windows where window.windowLevel == 0 && !window.isMinimized && window.isStandardWindow {
                     if let focusedId = tree.focusedWindowId,
@@ -128,7 +120,7 @@ public final class ServerEngine: @unchecked Sendable {
             return tree
         }
 
-        await reconcile(tree: snapshot, monitors: monitors)
+        await applyLayout(tree: snapshot, monitors: monitors)
 
         try await backend.observe { [weak self] event in
             self?.eventQueue.enqueue(event)
@@ -138,117 +130,111 @@ public final class ServerEngine: @unchecked Sendable {
     // MARK: - Event processing
 
     /// Process all pending events.
+    /// Events are used only as triggers — the OS is the source of truth for which windows exist.
     public func processEvents() async {
         let events = eventQueue.drain()
         guard !events.isEmpty else { return }
 
         print("zwm: processing \(events.count) events: \(events)")
-        let monitors = await backend.monitors()
 
-        let snapshot = withLock { () -> TreeState in
+        // Apply focus events under lock (these are trustworthy)
+        withLock {
             for event in events {
-                applyEvent(event)
+                switch event {
+                case .windowFocused(let windowId):
+                    if let nodeId = findNodeByWindowId(windowId) {
+                        tree = tree.setFocus(nodeId)
+                    }
+                default:
+                    break
+                }
             }
+        }
+
+        // Now discover reality and sync the tree
+        await syncTreeWithOS()
+    }
+
+    // MARK: - Sync tree with OS
+
+    /// Discover all current windows from the OS and sync the tree to match reality.
+    /// - Removes windows that no longer exist
+    /// - Adds windows that are new
+    /// - Swaps window IDs for recycled windows (same app, different ID)
+    private func syncTreeWithOS() async {
+        let monitors = await backend.monitors()
+        let discovered = (try? await backend.discoverWindows()) ?? []
+
+        let manageable = discovered.filter {
+            $0.windowLevel == 0 && !$0.isMinimized && $0.isStandardWindow
+        }
+        let osWindowIds = Set(manageable.map(\.windowId))
+
+        let synced = withLock { () -> TreeState in
+            let treeWindows = tree.allWindows
+
+            // 1. Find stale windows (in tree but not in OS)
+            var stale: [(nodeId: NodeId, windowId: UInt32, appPid: Int32)] = []
+            for win in treeWindows {
+                if !osWindowIds.contains(win.windowId) {
+                    stale.append((nodeId: win.id, windowId: win.windowId, appPid: win.appPid))
+                }
+            }
+
+            // 2. Find new windows (in OS but not in tree)
+            let treeWindowIds = Set(treeWindows.map(\.windowId))
+            var newWindows = manageable.filter { !treeWindowIds.contains($0.windowId) }
+
+            // 3. Match stale → new by app PID (in-place ID swap for recycled windows)
+            var unmatched: [(nodeId: NodeId, windowId: UInt32)] = []
+            for s in stale {
+                if let matchIdx = newWindows.firstIndex(where: { $0.pid == s.appPid }) {
+                    let match = newWindows.remove(at: matchIdx)
+                    print("zwm: sync: window \(s.windowId) → \(match.windowId) (\(match.appName))")
+                    tree = tree.replaceWindowId(s.nodeId, newWindowId: match.windowId, newTitle: match.title)
+                } else {
+                    unmatched.append((nodeId: s.nodeId, windowId: s.windowId))
+                }
+            }
+
+            // 4. Remove truly gone windows
+            for s in unmatched {
+                print("zwm: sync: removed \(s.windowId)")
+                tree = tree.removeNode(s.nodeId)
+            }
+
+            // 5. Add genuinely new windows
+            for window in newWindows {
+                print("zwm: sync: added \(window.windowId) (\(window.appName))")
+                if let wsId = activeWorkspaceId() {
+                    if let focusedId = tree.focusedWindowId,
+                       tree.workspaceContaining(focusedId)?.id == wsId,
+                       let focusedWin = tree.windowNode(focusedId),
+                       focusedWin.state == .tiling {
+                        tree = tree.insertWindowBSP(
+                            windowId: window.windowId, appPid: window.pid,
+                            appName: window.appName, title: window.title,
+                            nearWindowId: focusedId
+                        )
+                    } else {
+                        tree = tree.insertWindow(
+                            windowId: window.windowId, appPid: window.pid,
+                            appName: window.appName, title: window.title,
+                            inParent: wsId
+                        )
+                    }
+                    if let nodeId = tree.allWindows.first(where: { $0.windowId == window.windowId })?.id {
+                        tree = tree.setFocus(nodeId)
+                        applyWindowRules(nodeId: nodeId, appName: window.appName, title: window.title)
+                    }
+                }
+            }
+
             return tree
         }
 
-        print("zwm: tree has \(snapshot.allWindows.count) windows after events")
-        await reconcile(tree: snapshot, monitors: monitors)
-    }
-
-    private func applyEvent(_ event: WindowEvent) {
-        switch event {
-        case .windowCreated(let pid, let windowId, let appName, let title, let subrole, let frame):
-            let validSubrole = subrole.isEmpty || subrole == "AXStandardWindow"
-            let largeEnough = frame.width >= DiscoveredWindow.minManagedSize && frame.height >= DiscoveredWindow.minManagedSize
-            guard validSubrole && largeEnough else { break }
-            // Cache metadata even for duplicates
-            windowMetadata[windowId] = (appName: appName, title: title, pid: pid)
-            // Deduplicate: skip insertion if already in tree
-            guard findNodeByWindowId(windowId) == nil else { break }
-            if let wsId = activeWorkspaceId() {
-                // BSP: split the focused window if one exists and is tiling
-                if let focusedId = tree.focusedWindowId,
-                   tree.workspaceContaining(focusedId)?.id == wsId,
-                   let focusedWin = tree.windowNode(focusedId),
-                   focusedWin.state == .tiling {
-                    tree = tree.insertWindowBSP(
-                        windowId: windowId, appPid: pid,
-                        appName: appName, title: title,
-                        nearWindowId: focusedId
-                    )
-                } else {
-                    tree = tree.insertWindow(
-                        windowId: windowId, appPid: pid,
-                        appName: appName, title: title,
-                        inParent: wsId
-                    )
-                }
-                // Set focus on new window
-                if let nodeId = tree.allWindows.first(where: { $0.windowId == windowId })?.id {
-                    tree = tree.setFocus(nodeId)
-                    // Apply window rules to newly created window
-                    applyWindowRules(nodeId: nodeId, appName: appName, title: title)
-                }
-            }
-        case .windowDestroyed(let windowId):
-            windowMetadata.removeValue(forKey: windowId)
-            if let nodeId = findNodeByWindowId(windowId) {
-                tree = tree.removeNode(nodeId)
-            }
-        case .windowFocused(let windowId):
-            if let nodeId = findNodeByWindowId(windowId) {
-                tree = tree.setFocus(nodeId)
-            }
-        case .windowMoved(let windowId), .windowResized(let windowId):
-            // Suppress feedback loop: ignore events for windows we just repositioned
-            if recentlySetWindowIds.contains(windowId) { break }
-            // Otherwise no tree mutation needed
-        case .windowMinimized(let windowId):
-            if let nodeId = findNodeByWindowId(windowId) {
-                tree = tree.removeNode(nodeId)
-            }
-        case .windowUnminimized(let windowId):
-            // Deduplicate: skip if already in tree
-            guard findNodeByWindowId(windowId) == nil else { break }
-            let meta = windowMetadata[windowId]
-            if meta == nil {
-                print("zwm: warning: no cached metadata for unminimized window \(windowId)")
-            }
-            let appPid = meta?.pid ?? 0
-            let appName = meta?.appName ?? ""
-            let title = meta?.title ?? ""
-            if let wsId = activeWorkspaceId() {
-                if let focusedId = tree.focusedWindowId,
-                   tree.workspaceContaining(focusedId)?.id == wsId,
-                   let focusedWin = tree.windowNode(focusedId),
-                   focusedWin.state == .tiling {
-                    tree = tree.insertWindowBSP(
-                        windowId: windowId, appPid: appPid,
-                        appName: appName, title: title,
-                        nearWindowId: focusedId
-                    )
-                } else {
-                    tree = tree.insertWindow(
-                        windowId: windowId, appPid: appPid,
-                        appName: appName, title: title,
-                        inParent: wsId
-                    )
-                }
-                // Set focus on unminimized window
-                if let nodeId = tree.allWindows.first(where: { $0.windowId == windowId })?.id {
-                    tree = tree.setFocus(nodeId)
-                }
-            }
-        case .appTerminated(let pid):
-            let toRemove = tree.allWindows.filter { $0.appPid == pid }
-            for w in toRemove {
-                windowMetadata.removeValue(forKey: w.windowId)
-                tree = tree.removeNode(w.id)
-            }
-        default:
-            break
-        }
+        print("zwm: tree has \(synced.allWindows.count) windows after sync")
+        await applyLayout(tree: synced, monitors: monitors)
     }
 
     // MARK: - Command execution
@@ -259,7 +245,7 @@ public final class ServerEngine: @unchecked Sendable {
         let response = executeCommand(request)
         let snapshot = currentTree
 
-        await reconcile(tree: snapshot, monitors: monitors)
+        await applyLayout(tree: snapshot, monitors: monitors)
 
         // Handle pending close
         let closeId = withLock { () -> UInt32? in
@@ -293,38 +279,19 @@ public final class ServerEngine: @unchecked Sendable {
         }
     }
 
-    // MARK: - Reconciliation
+    // MARK: - Layout application
 
-    private func reconcile(tree: TreeState, monitors: [MonitorInfo]) async {
-        // Clear feedback suppression from previous cycle at the start of each reconcile
+    private func applyLayout(tree: TreeState, monitors: [MonitorInfo]) async {
+        // Clear feedback suppression from previous cycle
         withLock { recentlySetWindowIds.removeAll() }
 
-        // Validate all windows in the tree still exist; collect stale ones first, then remove
-        var validatedTree = tree
-        let allWindows = tree.allWindows
-        var staleNodeIds: [(nodeId: NodeId, windowId: UInt32)] = []
-        for win in allWindows {
-            let exists = await backend.windowExists(win.windowId)
-            if !exists {
-                staleNodeIds.append((nodeId: win.id, windowId: win.windowId))
-            }
-        }
-        let removedAny = !staleNodeIds.isEmpty
-        for stale in staleNodeIds {
-            validatedTree = validatedTree.removeNode(stale.nodeId)
-            print("zwm: reconcile: removed stale window \(stale.windowId)")
-        }
-        if removedAny {
-            withLock { self.tree = validatedTree }
-        }
-
         let gaps = withLock { _config.gaps }
-        let newLayout = layoutTree(validatedTree, monitors: monitors, gaps: gaps)
+        let newLayout = layoutTree(tree, monitors: monitors, gaps: gaps)
 
         let (oldLayout, oldFocus, newFocus) = withLock { () -> (LayoutResult, UInt32?, UInt32?) in
             let old = lastLayout
             let oldF = focusedMacWindowId(self.tree)
-            let newF = focusedMacWindowId(validatedTree)
+            let newF = focusedMacWindowId(tree)
             lastLayout = newLayout
             return (old, oldF, newF)
         }
@@ -332,7 +299,7 @@ public final class ServerEngine: @unchecked Sendable {
         let diff = diffLayouts(
             old: oldLayout, new: newLayout,
             oldFocusedWindowId: oldFocus, newFocusedWindowId: newFocus,
-            tree: validatedTree
+            tree: tree
         )
 
         if !diff.isEmpty {
@@ -403,7 +370,7 @@ public final class ServerEngine: @unchecked Sendable {
         }
     }
 
-    // MARK: - Helpers (called under lock from applyEvent)
+    // MARK: - Helpers (called under lock)
 
     func activeWorkspaceId() -> NodeId? {
         if let focusedId = tree.focusedWindowId,

@@ -317,10 +317,10 @@ extension AXBackend: WindowBackend {
             if windowId != 0 {
                 withLock { _ = knownWindowsByPid[pid, default: []].remove(windowId) }
                 emit(.windowDestroyed(windowId: windowId))
-            } else {
-                // Element is invalid — re-scan app to find which window is gone
-                detectDestroyedWindows(pid: pid)
             }
+            // When windowId==0, the destroyed element is not a window (e.g. a tab).
+            // Don't try to detect which window is gone — AX and CGWindowList are unreliable
+            // during tab transitions. The reconcile loop will catch truly destroyed windows.
         case kAXFocusedWindowChangedNotification:
             if windowId != 0 { emit(.windowFocused(windowId: windowId)) }
         case kAXWindowMovedNotification:
@@ -337,6 +337,8 @@ extension AXBackend: WindowBackend {
     }
 
     /// Re-scan an app's windows to find which ones were destroyed.
+    /// Uses CGWindowList to confirm a window is truly gone before emitting a destroy event,
+    /// since AX can transiently omit windows during tab close transitions.
     private func detectDestroyedWindows(pid: pid_t) {
         let appElement = AXUIElementCreateApplication(pid)
         var currentIds = Set<UInt32>()
@@ -349,14 +351,35 @@ extension AXBackend: WindowBackend {
             }
         }
 
-        let destroyed: Set<UInt32> = withLock {
+        let candidates: Set<UInt32> = withLock {
             let known = knownWindowsByPid[pid] ?? []
             let missing = known.subtracting(currentIds)
-            knownWindowsByPid[pid] = currentIds
+            // Add any newly discovered windows
+            for id in currentIds where !known.contains(id) {
+                knownWindowsByPid[pid, default: []].insert(id)
+            }
             return missing
         }
 
-        for wid in destroyed {
+        // Confirm each candidate is truly gone via CGWindowList
+        var confirmed: [UInt32] = []
+        for wid in candidates {
+            if let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], wid) as? [[String: Any]],
+               let foundWid = info.first?[kCGWindowNumber as String] as? UInt32,
+               foundWid == wid {
+                // Window still exists in CGWindowList — not actually destroyed
+                continue
+            }
+            confirmed.append(wid)
+        }
+
+        withLock {
+            for wid in confirmed {
+                knownWindowsByPid[pid, default: []].remove(wid)
+            }
+        }
+
+        for wid in confirmed {
             emit(.windowDestroyed(windowId: wid))
         }
     }
