@@ -19,6 +19,8 @@ public struct TreeState: Sendable, Equatable {
         self.idGenerator = idGenerator
     }
 
+    /// Create a copy with specific fields changed. `nil` means "keep current value".
+    /// Double-optional params (e.g. `NodeId??`) distinguish "keep" (outer nil) from "set to nil" (inner nil).
     func with(
         nodes: [NodeId: Node]? = nil,
         workspaceIds: [NodeId]? = nil,

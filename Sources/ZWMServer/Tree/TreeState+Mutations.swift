@@ -58,7 +58,7 @@ extension TreeState {
         }
 
         // Wrap nearWindow + newWindow in a container with alternated direction
-        let childLayout: Layout = parentNode.layout == .horizontal ? .vertical : .horizontal
+        let childLayout: Layout = (parentNode.layout ?? .horizontal) == .horizontal ? .vertical : .horizontal
 
         var gen = idGenerator
         let containerId = gen.generate()

@@ -42,6 +42,7 @@ public struct WorkspaceNode: Sendable, Equatable {
         self.layout = layout
     }
 
+    /// Copy with specific fields changed. Double-optional `monitorId` distinguishes "keep" (outer nil) from "set to nil" (inner nil).
     public func with(
         childIds: [NodeId]? = nil,
         floatingWindowIds: [NodeId]? = nil,
@@ -223,11 +224,11 @@ public enum Node: Sendable, Equatable {
         }
     }
 
-    var layout: Layout {
+    var layout: Layout? {
         switch self {
         case .workspace(let ws): ws.layout
         case .tilingContainer(let tc): tc.layout
-        default: .horizontal
+        case .window: nil
         }
     }
 }

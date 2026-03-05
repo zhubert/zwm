@@ -51,7 +51,7 @@ extension ServerEngine {
         }
 
         let targetIdx: Int?
-        let layout = parentNode.layout
+        let layout = parentNode.layout ?? .horizontal
 
         switch (direction, layout) {
         case (.left, .horizontal), (.up, .vertical):
@@ -91,7 +91,7 @@ extension ServerEngine {
             return CommandResponse(exitCode: 0, stdout: "", stderr: "")
         }
 
-        let layout = parentNode.layout
+        let layout = parentNode.layout ?? .horizontal
 
         switch (direction, layout) {
         case (.left, .horizontal), (.up, .vertical):
@@ -164,7 +164,7 @@ extension ServerEngine {
         guard let parentNode = tree.node(win.parentId) else {
             return CommandResponse(exitCode: 0, stdout: "", stderr: "")
         }
-        let currentLayout = parentNode.layout
+        let currentLayout = parentNode.layout ?? .horizontal
 
         let newLayout: Layout
         if let arg = args.first {
