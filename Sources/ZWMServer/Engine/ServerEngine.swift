@@ -136,6 +136,18 @@ public final class ServerEngine: @unchecked Sendable {
         await syncTreeWithOS(focusWindowId: lastFocusedWindowId)
     }
 
+    /// Force a full sync with the OS, regardless of whether events are pending.
+    /// Called by the periodic validation timer to catch missed events,
+    /// dead observers, or state drift after sleep/wake.
+    public func periodicValidation() async {
+        let windowCountBefore = withLock { tree.allWindows.count }
+        await syncTreeWithOS()
+        let windowCountAfter = withLock { tree.allWindows.count }
+        if windowCountBefore != windowCountAfter {
+            print("zwm: periodic validation corrected window count: \(windowCountBefore) → \(windowCountAfter)")
+        }
+    }
+
     // MARK: - Sync tree with OS
 
     /// Discover all current windows from the OS and sync the tree to match reality.

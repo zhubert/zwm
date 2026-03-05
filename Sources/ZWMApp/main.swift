@@ -54,6 +54,14 @@ Task {
     }
 }
 
+// Periodic validation timer — catches missed events, dead observers, state drift
+Task {
+    while true {
+        try? await Task.sleep(nanoseconds: 5_000_000_000) // every 5 seconds
+        await engine.periodicValidation()
+    }
+}
+
 // Set up global keybindings
 let hotkeyManager = HotkeyManager { command in
     let parts = command.split(separator: " ", maxSplits: 1).map(String.init)

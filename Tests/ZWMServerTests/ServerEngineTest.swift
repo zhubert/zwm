@@ -406,6 +406,41 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     #expect(mainNode.state == .tiling)
 }
 
+// MARK: - Periodic validation
+
+@Test func periodicValidationRemovesGoneWindows() async throws {
+    let (engine, backend) = try await makeEngine(windows: [window(1), window(2)])
+    #expect(engine.currentTree.allWindows.count == 2)
+
+    // Remove window from OS state without emitting any event (simulates missed event)
+    backend.removeWindow(1)
+
+    // Periodic validation should detect the missing window
+    await engine.periodicValidation()
+    #expect(engine.currentTree.allWindows.count == 1)
+    #expect(engine.currentTree.allWindows[0].windowId == 2)
+}
+
+@Test func periodicValidationAddsNewWindows() async throws {
+    let (engine, backend) = try await makeEngine(windows: [window(1)])
+    #expect(engine.currentTree.allWindows.count == 1)
+
+    // Add window to OS state without emitting any event (simulates missed event)
+    backend.addWindow(window(2))
+
+    await engine.periodicValidation()
+    #expect(engine.currentTree.allWindows.count == 2)
+}
+
+@Test func periodicValidationNoOpWhenSynced() async throws {
+    let (engine, backend) = try await makeEngine(windows: [window(1)])
+    backend.resetRecordedCalls()
+
+    // Nothing changed — validation should be a no-op (no setFrame calls)
+    await engine.periodicValidation()
+    #expect(engine.currentTree.allWindows.count == 1)
+}
+
 // MARK: - Window filtering (subrole + size)
 
 @Test func discoveredDialogWindowIsSkipped() async throws {
