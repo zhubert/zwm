@@ -3,6 +3,7 @@
 .swiftpm/
 Package.resolved
 
+.claude
 # Build output
 .debug/
 .release/
