@@ -308,10 +308,10 @@ extension AXBackend: WindowBackend {
             if windowId != 0 {
                 withLock { _ = knownWindowsByPid[pid, default: []].remove(windowId) }
                 emit(.windowDestroyed(windowId: windowId))
-            } else {
-                // Element is invalid — re-scan app to find which window is gone
-                detectDestroyedWindows(pid: pid)
             }
+            // When windowId==0, the destroyed element is not a window (e.g. a tab).
+            // Don't try to detect which window is gone — AX and CGWindowList are unreliable
+            // during tab transitions. The reconcile loop will catch truly destroyed windows.
         case kAXFocusedWindowChangedNotification:
             if windowId != 0 { emit(.windowFocused(windowId: windowId)) }
         case kAXWindowMovedNotification:
@@ -324,31 +324,6 @@ extension AXBackend: WindowBackend {
             if windowId != 0 { emit(.windowUnminimized(windowId: windowId)) }
         default:
             break
-        }
-    }
-
-    /// Re-scan an app's windows to find which ones were destroyed.
-    private func detectDestroyedWindows(pid: pid_t) {
-        let appElement = AXUIElementCreateApplication(pid)
-        var currentIds = Set<UInt32>()
-        if let windows = axArrayAttribute(appElement, kAXWindowsAttribute) {
-            for win in windows {
-                var wid: UInt32 = 0
-                if _AXUIElementGetWindow(win, &wid) == .success, wid != 0 {
-                    currentIds.insert(wid)
-                }
-            }
-        }
-
-        let destroyed: Set<UInt32> = withLock {
-            let known = knownWindowsByPid[pid] ?? []
-            let missing = known.subtracting(currentIds)
-            knownWindowsByPid[pid] = currentIds
-            return missing
-        }
-
-        for wid in destroyed {
-            emit(.windowDestroyed(windowId: wid))
         }
     }
 

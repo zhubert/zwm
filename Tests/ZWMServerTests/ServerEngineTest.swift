@@ -198,6 +198,10 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
 
 @Test func windowCreatedEventAddsToTree() async throws {
     let (engine, backend) = try await makeEngine()
+    // Add window to mock OS state, then emit event as trigger
+    let newWin = DiscoveredWindow(windowId: 42, pid: 100, appName: "App", title: "W42",
+                                   frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+    backend.addWindow(newWin)
     backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "App", title: "W42", subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600)))
 
     await engine.processEvents()
@@ -211,6 +215,8 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     let (engine, backend) = try await makeEngine(windows: [window(1)])
     #expect(engine.currentTree.allWindows.count == 1)
 
+    // Remove window from mock OS state, then emit event as trigger
+    backend.removeWindow(1)
     backend.emit(.windowDestroyed(windowId: 1))
     await engine.processEvents()
 
@@ -228,6 +234,9 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     let (engine, backend) = try await makeEngine(windows: [w1, w2, w3])
     #expect(engine.currentTree.allWindows.count == 3)
 
+    // Remove terminated app's windows from mock OS state
+    backend.removeWindow(1)
+    backend.removeWindow(2)
     backend.emit(.appTerminated(pid: 100))
     await engine.processEvents()
 
@@ -344,6 +353,10 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     let config = EngineConfig(workspaceNames: ["1", "2"], windowRules: [rule])
     let (engine, backend) = try await makeEngine(config: config)
 
+    let newWin = DiscoveredWindow(windowId: 42, pid: 100, appName: "Safari", title: "New Tab",
+                                   frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+                                   subrole: "AXStandardWindow")
+    backend.addWindow(newWin)
     backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "Safari", title: "New Tab", subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600)))
     await engine.processEvents()
 
@@ -414,6 +427,11 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
 
 @Test func windowCreatedWithDialogSubroleIsNotInserted() async throws {
     let (engine, backend) = try await makeEngine()
+    // Add dialog window to OS state — it should be filtered out by isStandardWindow
+    let dialog = DiscoveredWindow(windowId: 42, pid: 100, appName: "Zoom", title: "Toast",
+                                   frame: CGRect(x: 0, y: 0, width: 300, height: 100),
+                                   subrole: "AXDialog")
+    backend.addWindow(dialog)
     backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "Zoom", title: "Toast", subrole: "AXDialog", frame: CGRect(x: 0, y: 0, width: 300, height: 100)))
     await engine.processEvents()
 
@@ -423,6 +441,9 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
 
 @Test func windowCreatedWithEmptySubroleIsInserted() async throws {
     let (engine, backend) = try await makeEngine()
+    let newWin = DiscoveredWindow(windowId: 42, pid: 100, appName: "App", title: "Win",
+                                   frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+    backend.addWindow(newWin)
     backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "App", title: "Win", subrole: "", frame: CGRect(x: 0, y: 0, width: 800, height: 600)))
     await engine.processEvents()
 
@@ -448,6 +469,11 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
 
 @Test func windowCreatedWithTinyFrameIsNotInserted() async throws {
     let (engine, backend) = try await makeEngine()
+    // Add tiny window to OS state — it should be filtered out by isStandardWindow
+    let tiny = DiscoveredWindow(windowId: 42, pid: 100, appName: "App", title: "Tiny",
+                                 frame: CGRect(x: 0, y: 0, width: 10, height: 10),
+                                 subrole: "AXStandardWindow")
+    backend.addWindow(tiny)
     backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "App", title: "Tiny", subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 10, height: 10)))
     await engine.processEvents()
 
