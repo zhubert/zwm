@@ -162,10 +162,10 @@ public final class ServerEngine: @unchecked Sendable {
             let validSubrole = subrole.isEmpty || subrole == "AXStandardWindow"
             let largeEnough = frame.width >= DiscoveredWindow.minManagedSize && frame.height >= DiscoveredWindow.minManagedSize
             guard validSubrole && largeEnough else { break }
-            // Deduplicate: skip if already in tree
-            guard findNodeByWindowId(windowId) == nil else { break }
-            // Cache metadata
+            // Cache metadata even for duplicates
             windowMetadata[windowId] = (appName: appName, title: title, pid: pid)
+            // Deduplicate: skip insertion if already in tree
+            guard findNodeByWindowId(windowId) == nil else { break }
             if let wsId = activeWorkspaceId() {
                 // BSP: split the focused window if one exists and is tiling
                 if let focusedId = tree.focusedWindowId,
@@ -212,6 +212,9 @@ public final class ServerEngine: @unchecked Sendable {
             // Deduplicate: skip if already in tree
             guard findNodeByWindowId(windowId) == nil else { break }
             let meta = windowMetadata[windowId]
+            if meta == nil {
+                print("zwm: warning: no cached metadata for unminimized window \(windowId)")
+            }
             let appPid = meta?.pid ?? 0
             let appName = meta?.appName ?? ""
             let title = meta?.title ?? ""
@@ -293,19 +296,23 @@ public final class ServerEngine: @unchecked Sendable {
     // MARK: - Reconciliation
 
     private func reconcile(tree: TreeState, monitors: [MonitorInfo]) async {
-        // Validate all windows in the tree still exist; remove stale ones
+        // Clear feedback suppression from previous cycle at the start of each reconcile
+        withLock { recentlySetWindowIds.removeAll() }
+
+        // Validate all windows in the tree still exist; collect stale ones first, then remove
         var validatedTree = tree
         let allWindows = tree.allWindows
-        var removedAny = false
+        var staleNodeIds: [(nodeId: NodeId, windowId: UInt32)] = []
         for win in allWindows {
             let exists = await backend.windowExists(win.windowId)
             if !exists {
-                if let nodeId = validatedTree.allWindows.first(where: { $0.windowId == win.windowId })?.id {
-                    validatedTree = validatedTree.removeNode(nodeId)
-                    removedAny = true
-                    print("zwm: reconcile: removed stale window \(win.windowId)")
-                }
+                staleNodeIds.append((nodeId: win.id, windowId: win.windowId))
             }
+        }
+        let removedAny = !staleNodeIds.isEmpty
+        for stale in staleNodeIds {
+            validatedTree = validatedTree.removeNode(stale.nodeId)
+            print("zwm: reconcile: removed stale window \(stale.windowId)")
         }
         if removedAny {
             withLock { self.tree = validatedTree }
@@ -332,11 +339,7 @@ public final class ServerEngine: @unchecked Sendable {
             print("zwm: reconcile diff: \(diff.toSet.count) frame changes, focus=\(String(describing: diff.toFocus))")
         }
 
-        guard !diff.isEmpty else {
-            // Clear feedback suppression set even when no diff
-            withLock { recentlySetWindowIds.removeAll() }
-            return
-        }
+        guard !diff.isEmpty else { return }
 
         // Track which windows we're about to reposition (for feedback suppression)
         let setIds = Set(diff.toSet.map(\.windowId))
@@ -410,8 +413,9 @@ public final class ServerEngine: @unchecked Sendable {
         return tree.workspaceIds.first
     }
 
-    func findNodeByWindowId(_ windowId: UInt32) -> NodeId? {
-        tree.allWindows.first { $0.windowId == windowId }?.id
+    func findNodeByWindowId(_ windowId: UInt32, in searchTree: TreeState? = nil) -> NodeId? {
+        let t = searchTree ?? tree
+        return t.allWindows.first { $0.windowId == windowId }?.id
     }
 
     private func focusedMacWindowId(_ tree: TreeState) -> UInt32? {
