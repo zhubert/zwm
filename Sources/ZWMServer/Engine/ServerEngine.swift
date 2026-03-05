@@ -61,16 +61,8 @@ public final class ServerEngine: @unchecked Sendable {
                     let monitorId = monitors[i % monitors.count].id
                     if let ws = tree.workspaceNode(wsId) {
                         var nodes = tree.nodes
-                        nodes[wsId] = .workspace(WorkspaceNode(
-                            id: ws.id, name: ws.name, childIds: ws.childIds,
-                            floatingWindowIds: ws.floatingWindowIds, monitorId: monitorId,
-                            layout: ws.layout
-                        ))
-                        tree = TreeState(
-                            nodes: nodes, workspaceIds: tree.workspaceIds,
-                            focusedWindowId: tree.focusedWindowId,
-                            workspaceMRU: tree.workspaceMRU, idGenerator: tree.idGenerator
-                        )
+                        nodes[wsId] = .workspace(ws.with(monitorId: monitorId))
+                        tree = tree.with(nodes: nodes)
                     }
                 }
             }

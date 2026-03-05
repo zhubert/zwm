@@ -51,7 +51,7 @@ extension ServerEngine {
         }
 
         let targetIdx: Int?
-        let layout = containerLayout(parentNode)
+        let layout = parentNode.layout
 
         switch (direction, layout) {
         case (.left, .horizontal), (.up, .vertical):
@@ -91,7 +91,7 @@ extension ServerEngine {
             return CommandResponse(exitCode: 0, stdout: "", stderr: "")
         }
 
-        let layout = containerLayout(parentNode)
+        let layout = parentNode.layout
 
         switch (direction, layout) {
         case (.left, .horizontal), (.up, .vertical):
@@ -124,13 +124,8 @@ extension ServerEngine {
                let winId = firstWindow(in: firstChild, tree: tree) {
                 tree = tree.setFocus(winId)
             } else {
-                var mru = tree.workspaceMRU
-                mru = [name] + mru.filter { $0 != name }
-                tree = TreeState(
-                    nodes: tree.nodes, workspaceIds: tree.workspaceIds,
-                    focusedWindowId: tree.focusedWindowId,
-                    workspaceMRU: mru, idGenerator: tree.idGenerator
-                )
+                let mru = [name] + tree.workspaceMRU.filter { $0 != name }
+                tree = tree.with(workspaceMRU: mru)
             }
             setTree(tree)
         }
@@ -166,13 +161,10 @@ extension ServerEngine {
             return CommandResponse(exitCode: 0, stdout: "", stderr: "")
         }
 
-        let parentNode = tree.node(win.parentId)
-        let currentLayout: Layout
-        switch parentNode {
-        case .tilingContainer(let tc): currentLayout = tc.layout
-        case .workspace(let ws): currentLayout = ws.layout
-        default: return CommandResponse(exitCode: 0, stdout: "", stderr: "")
+        guard let parentNode = tree.node(win.parentId) else {
+            return CommandResponse(exitCode: 0, stdout: "", stderr: "")
         }
+        let currentLayout = parentNode.layout
 
         let newLayout: Layout
         if let arg = args.first {
@@ -203,10 +195,10 @@ extension ServerEngine {
         }
 
         switch parentNode {
-        case .tilingContainer(let tc):
-            tree = tree.setLayout(tc.id, newLayout)
-        case .workspace(let ws):
-            tree = tree.setWorkspaceLayout(ws.id, newLayout)
+        case .tilingContainer:
+            tree = tree.setLayout(parentNode.id, newLayout)
+        case .workspace:
+            tree = tree.setWorkspaceLayout(parentNode.id, newLayout)
         default:
             break
         }
@@ -301,25 +293,7 @@ extension ServerEngine {
     // MARK: - Internal helpers
 
     private func firstWindow(in nodeId: NodeId, tree: TreeState) -> NodeId? {
-        guard let node = tree.node(nodeId) else { return nil }
-        switch node {
-        case .window: return nodeId
-        case .tilingContainer(let tc):
-            for child in tc.childIds {
-                if let w = firstWindow(in: child, tree: tree) { return w }
-            }
-            return nil
-        case .workspace(let ws):
-            for child in ws.childIds {
-                if let w = firstWindow(in: child, tree: tree) { return w }
-            }
-            return nil
-        }
-    }
-
-    private func containerLayout(_ node: Node) -> Layout {
-        if case .tilingContainer(let tc) = node { return tc.layout }
-        return .horizontal
+        tree.firstWindowId(in: nodeId)
     }
 }
 

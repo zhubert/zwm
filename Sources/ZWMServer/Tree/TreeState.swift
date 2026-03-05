@@ -19,6 +19,22 @@ public struct TreeState: Sendable, Equatable {
         self.idGenerator = idGenerator
     }
 
+    func with(
+        nodes: [NodeId: Node]? = nil,
+        workspaceIds: [NodeId]? = nil,
+        focusedWindowId: NodeId?? = nil,
+        workspaceMRU: [String]? = nil,
+        idGenerator: NodeIdGenerator? = nil
+    ) -> TreeState {
+        TreeState(
+            nodes: nodes ?? self.nodes,
+            workspaceIds: workspaceIds ?? self.workspaceIds,
+            focusedWindowId: focusedWindowId ?? self.focusedWindowId,
+            workspaceMRU: workspaceMRU ?? self.workspaceMRU,
+            idGenerator: idGenerator ?? self.idGenerator
+        )
+    }
+
     // MARK: - Queries
 
     public func node(_ id: NodeId) -> Node? {

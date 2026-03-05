@@ -9,25 +9,11 @@ public enum Layout: Sendable, Equatable {
 
 // MARK: - Window state
 
-public enum WindowState: Sendable {
+public enum WindowState: Sendable, Equatable {
     case tiling
     case floating(CGRect)
     case fullscreen
     case minimized
-}
-
-extension WindowState: Equatable {
-    public static func == (lhs: WindowState, rhs: WindowState) -> Bool {
-        switch (lhs, rhs) {
-        case (.tiling, .tiling), (.fullscreen, .fullscreen), (.minimized, .minimized):
-            true
-        case (.floating(let a), .floating(let b)):
-            a.origin.x == b.origin.x && a.origin.y == b.origin.y
-                && a.size.width == b.size.width && a.size.height == b.size.height
-        default:
-            false
-        }
-    }
 }
 
 // MARK: - Node types
@@ -55,6 +41,21 @@ public struct WorkspaceNode: Sendable, Equatable {
         self.monitorId = monitorId
         self.layout = layout
     }
+
+    public func with(
+        childIds: [NodeId]? = nil,
+        floatingWindowIds: [NodeId]? = nil,
+        monitorId: UInt32?? = nil,
+        layout: Layout? = nil
+    ) -> WorkspaceNode {
+        WorkspaceNode(
+            id: id, name: name,
+            childIds: childIds ?? self.childIds,
+            floatingWindowIds: floatingWindowIds ?? self.floatingWindowIds,
+            monitorId: monitorId ?? self.monitorId,
+            layout: layout ?? self.layout
+        )
+    }
 }
 
 public struct TilingContainerNode: Sendable, Equatable {
@@ -76,6 +77,21 @@ public struct TilingContainerNode: Sendable, Equatable {
         self.childIds = childIds
         self.layout = layout
         self.weight = weight
+    }
+
+    public func with(
+        parentId: NodeId? = nil,
+        childIds: [NodeId]? = nil,
+        layout: Layout? = nil,
+        weight: Double? = nil
+    ) -> TilingContainerNode {
+        TilingContainerNode(
+            id: id,
+            parentId: parentId ?? self.parentId,
+            childIds: childIds ?? self.childIds,
+            layout: layout ?? self.layout,
+            weight: weight ?? self.weight
+        )
     }
 }
 
@@ -108,6 +124,24 @@ public struct WindowNode: Sendable, Equatable {
         self.state = state
         self.weight = weight
     }
+
+    public func with(
+        parentId: NodeId? = nil,
+        windowId: UInt32? = nil,
+        title: String? = nil,
+        state: WindowState? = nil,
+        weight: Double? = nil
+    ) -> WindowNode {
+        WindowNode(
+            id: id,
+            parentId: parentId ?? self.parentId,
+            windowId: windowId ?? self.windowId,
+            appPid: appPid, appName: appName,
+            title: title ?? self.title,
+            state: state ?? self.state,
+            weight: weight ?? self.weight
+        )
+    }
 }
 
 // MARK: - Node enum
@@ -138,6 +172,62 @@ public enum Node: Sendable, Equatable {
         case .workspace: nil
         case .tilingContainer(let n): n.parentId
         case .window(let n): n.parentId
+        }
+    }
+
+    // MARK: - Child-list helpers
+
+    func replacingChildren(_ transform: ([NodeId]) -> [NodeId]) -> Node {
+        switch self {
+        case .workspace(let ws):
+            .workspace(ws.with(childIds: transform(ws.childIds)))
+        case .tilingContainer(let tc):
+            .tilingContainer(tc.with(childIds: transform(tc.childIds)))
+        case .window:
+            self
+        }
+    }
+
+    func removingChild(_ id: NodeId) -> Node {
+        switch self {
+        case .workspace(let ws):
+            .workspace(ws.with(
+                childIds: ws.childIds.filter { $0 != id },
+                floatingWindowIds: ws.floatingWindowIds.filter { $0 != id }
+            ))
+        case .tilingContainer(let tc):
+            .tilingContainer(tc.with(childIds: tc.childIds.filter { $0 != id }))
+        case .window:
+            self
+        }
+    }
+
+    func insertingChild(_ id: NodeId, after afterId: NodeId?) -> Node {
+        replacingChildren { children in
+            var result = children
+            if let after = afterId, let idx = result.firstIndex(of: after) {
+                result.insert(id, at: idx + 1)
+            } else {
+                result.append(id)
+            }
+            return result
+        }
+    }
+
+    func insertingChild(_ id: NodeId, at index: Int) -> Node {
+        replacingChildren { children in
+            var result = children
+            let clamped = min(index, result.count)
+            result.insert(id, at: clamped)
+            return result
+        }
+    }
+
+    var layout: Layout {
+        switch self {
+        case .workspace(let ws): ws.layout
+        case .tilingContainer(let tc): tc.layout
+        default: .horizontal
         }
     }
 }

@@ -179,61 +179,42 @@ extension AXBackend: WindowBackend {
         await MainActor.run {
             let center = NSWorkspace.shared.notificationCenter
 
-            let launchObserver = center.addObserver(
-                forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
-            ) { [weak self] notification in
-                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                self?.emit(.appLaunched(pid: app.processIdentifier))
-                self?.startObservingApp(app.processIdentifier)
+            // App-level notifications that carry a running application
+            let appNotifications: [(NSNotification.Name, @Sendable (pid_t) -> WindowEvent)] = [
+                (.init(rawValue: NSWorkspace.didLaunchApplicationNotification.rawValue),
+                 { .appLaunched(pid: $0) }),
+                (.init(rawValue: NSWorkspace.didTerminateApplicationNotification.rawValue),
+                 { .appTerminated(pid: $0) }),
+                (.init(rawValue: NSWorkspace.didActivateApplicationNotification.rawValue),
+                 { .appActivated(pid: $0) }),
+                (.init(rawValue: NSWorkspace.didHideApplicationNotification.rawValue),
+                 { .appHidden(pid: $0) }),
+                (.init(rawValue: NSWorkspace.didUnhideApplicationNotification.rawValue),
+                 { .appUnhidden(pid: $0) }),
+            ]
+
+            var observers: [NSObjectProtocol] = appNotifications.map { name, eventFactory in
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                    guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+                    let pid = app.processIdentifier
+                    self?.emit(eventFactory(pid))
+                    if name == NSWorkspace.didLaunchApplicationNotification {
+                        self?.startObservingApp(pid)
+                    } else if name == NSWorkspace.didTerminateApplicationNotification {
+                        self?.stopObservingApp(pid)
+                    }
+                }
             }
 
-            let terminateObserver = center.addObserver(
-                forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
-            ) { [weak self] notification in
-                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                self?.emit(.appTerminated(pid: app.processIdentifier))
-                self?.stopObservingApp(app.processIdentifier)
-            }
-
-            let activateObserver = center.addObserver(
-                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-            ) { [weak self] notification in
-                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                self?.emit(.appActivated(pid: app.processIdentifier))
-            }
-
-            let hideObserver = center.addObserver(
-                forName: NSWorkspace.didHideApplicationNotification, object: nil, queue: .main
-            ) { [weak self] notification in
-                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                self?.emit(.appHidden(pid: app.processIdentifier))
-            }
-
-            let unhideObserver = center.addObserver(
-                forName: NSWorkspace.didUnhideApplicationNotification, object: nil, queue: .main
-            ) { [weak self] notification in
-                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                self?.emit(.appUnhidden(pid: app.processIdentifier))
-            }
-
-            let spaceObserver = center.addObserver(
+            observers.append(center.addObserver(
                 forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
             ) { [weak self] _ in
                 self?.emit(.spaceChanged)
-            }
+            })
 
-            self.withLock {
-                self.workspaceObservers = [
-                    launchObserver, terminateObserver, activateObserver,
-                    hideObserver, unhideObserver, spaceObserver,
-                ]
-            }
+            self.withLock { self.workspaceObservers = observers }
 
-            // Start observing existing regular apps
-            let apps = NSWorkspace.shared.runningApplications.filter {
-                $0.activationPolicy == .regular
-            }
-            for app in apps {
+            for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
                 self.startObservingApp(app.processIdentifier)
             }
         }
