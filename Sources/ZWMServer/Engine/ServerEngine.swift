@@ -14,9 +14,6 @@ public final class ServerEngine: @unchecked Sendable {
     private var _config: EngineConfig
     var pendingClose: UInt32?
 
-    /// Window IDs we recently positioned — ignore move/resize events from these to suppress feedback loops.
-    private var recentlySetWindowIds: Set<UInt32> = []
-
     public init(backend: any WindowBackend, config: EngineConfig = EngineConfig()) {
         self.backend = backend
         self.eventQueue = EventQueue()
@@ -137,22 +134,14 @@ public final class ServerEngine: @unchecked Sendable {
 
         print("zwm: processing \(events.count) events: \(events)")
 
-        // Apply focus events under lock (these are trustworthy)
-        withLock {
-            for event in events {
-                switch event {
-                case .windowFocused(let windowId):
-                    if let nodeId = findNodeByWindowId(windowId) {
-                        tree = tree.setFocus(nodeId)
-                    }
-                default:
-                    break
-                }
-            }
-        }
+        // Extract the last focus event — we'll apply it after syncing the tree
+        let lastFocusedWindowId = events.reversed().compactMap { event -> UInt32? in
+            if case .windowFocused(let wid) = event { return wid }
+            return nil
+        }.first
 
-        // Now discover reality and sync the tree
-        await syncTreeWithOS()
+        // Discover reality and sync the tree
+        await syncTreeWithOS(focusWindowId: lastFocusedWindowId)
     }
 
     // MARK: - Sync tree with OS
@@ -161,7 +150,8 @@ public final class ServerEngine: @unchecked Sendable {
     /// - Removes windows that no longer exist
     /// - Adds windows that are new
     /// - Swaps window IDs for recycled windows (same app, different ID)
-    private func syncTreeWithOS() async {
+    /// - Applies focus from the most recent focus event (after sync, so IDs are current)
+    private func syncTreeWithOS(focusWindowId: UInt32? = nil) async {
         let monitors = await backend.monitors()
         let discovered = (try? await backend.discoverWindows()) ?? []
 
@@ -224,10 +214,19 @@ public final class ServerEngine: @unchecked Sendable {
                         )
                     }
                     if let nodeId = tree.allWindows.first(where: { $0.windowId == window.windowId })?.id {
-                        tree = tree.setFocus(nodeId)
                         applyWindowRules(nodeId: nodeId, appName: window.appName, title: window.title)
+                        // Only auto-focus if no window is currently focused
+                        if tree.focusedWindowId == nil {
+                            tree = tree.setFocus(nodeId)
+                        }
                     }
                 }
+            }
+
+            // 6. Apply focus from the most recent event (after sync so IDs are current)
+            if let focusWid = focusWindowId,
+               let nodeId = findNodeByWindowId(focusWid) {
+                tree = tree.setFocus(nodeId)
             }
 
             return tree
@@ -282,9 +281,6 @@ public final class ServerEngine: @unchecked Sendable {
     // MARK: - Layout application
 
     private func applyLayout(tree: TreeState, monitors: [MonitorInfo]) async {
-        // Clear feedback suppression from previous cycle
-        withLock { recentlySetWindowIds.removeAll() }
-
         let gaps = withLock { _config.gaps }
         let newLayout = layoutTree(tree, monitors: monitors, gaps: gaps)
 
@@ -307,10 +303,6 @@ public final class ServerEngine: @unchecked Sendable {
         }
 
         guard !diff.isEmpty else { return }
-
-        // Track which windows we're about to reposition (for feedback suppression)
-        let setIds = Set(diff.toSet.map(\.windowId))
-        withLock { recentlySetWindowIds = setIds }
 
         for change in diff.toSet {
             print("zwm: setFrame(\(change.windowId), \(change.frame))")

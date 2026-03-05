@@ -29,12 +29,6 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
         h?(event)
     }
 
-    /// Set which window IDs are considered "live" for windowExists checks.
-    /// When nil (default), all windows are considered to exist.
-    public func setLiveWindowIds(_ ids: Set<UInt32>?) {
-        lock.withLock { state.liveWindowIds = ids }
-    }
-
     // MARK: - Recorded call inspection
 
     public var setFrameCalls: [(windowId: UInt32, frame: CGRect)] {
@@ -84,16 +78,6 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
         lock.withLock { state.minimizeCalls.append((windowId: windowId, minimized: minimized)) }
     }
 
-    public func windowExists(_ windowId: UInt32) async -> Bool {
-        lock.withLock {
-            if let live = state.liveWindowIds {
-                return live.contains(windowId)
-            }
-            // Default: all windows exist (tests don't need stale window validation unless opted in)
-            return true
-        }
-    }
-
     public func monitors() async -> [MonitorInfo] {
         lock.withLock { state.monitors }
     }
@@ -111,8 +95,6 @@ private struct MockState {
     var focusCalls: [UInt32] = []
     var closeCalls: [UInt32] = []
     var minimizeCalls: [(windowId: UInt32, minimized: Bool)] = []
-    /// When non-nil, windowExists only returns true for IDs in this set.
-    var liveWindowIds: Set<UInt32>?
 }
 
 /// Lightweight lock wrapper around os_unfair_lock.
