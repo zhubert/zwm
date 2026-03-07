@@ -16,25 +16,15 @@ public final class HotkeyManager: @unchecked Sendable {
         self.commandHandler = commandHandler
     }
 
-    /// Load keybindings from config.
+    /// Load keybindings from config for the current mode.
     public func loadBindings(_ keybindings: [String: [String: String]]) {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
-
-        bindings.removeAll()
-        // Load the current mode's bindings
-        if let modeBindings = keybindings[currentMode] {
-            for (key, command) in modeBindings {
-                if let combo = parseKeyCombo(key) {
-                    bindings[combo] = command
-                }
-            }
-        }
+        switchMode(currentMode, keybindings: keybindings)
     }
 
     /// Switch the active binding mode.
     public func switchMode(_ mode: String, keybindings: [String: [String: String]]) {
         os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         currentMode = mode
         bindings.removeAll()
         if let modeBindings = keybindings[mode] {
@@ -44,7 +34,6 @@ public final class HotkeyManager: @unchecked Sendable {
                 }
             }
         }
-        os_unfair_lock_unlock(&lock)
     }
 
     /// Start intercepting keyboard events. Must be called from main thread.
