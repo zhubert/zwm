@@ -22,10 +22,10 @@ private func makeEngine(
     return (engine, backend)
 }
 
-private func window(_ id: UInt32, app: String = "App", title: String = "") -> DiscoveredWindow {
+private func window(_ id: UInt32, app: String = "App", title: String = "", frame: CGRect = CGRect(x: 0, y: 0, width: 1000, height: 800)) -> DiscoveredWindow {
     DiscoveredWindow(
         windowId: id, pid: Int32(id), appName: app, title: title.isEmpty ? "W\(id)" : title,
-        frame: CGRect(x: 0, y: 0, width: 800, height: 600)
+        frame: frame
     )
 }
 
@@ -200,9 +200,9 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     let (engine, backend) = try await makeEngine()
     // Add window to mock OS state, then emit event as trigger
     let newWin = DiscoveredWindow(windowId: 42, pid: 100, appName: "App", title: "W42",
-                                   frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+                                   frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
     backend.addWindow(newWin)
-    backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "App", title: "W42", subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600)))
+    backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "App", title: "W42", subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 1000, height: 800)))
 
     await engine.processEvents()
 
@@ -225,11 +225,11 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
 
 @Test func appTerminatedRemovesAllAppWindows() async throws {
     let w1 = DiscoveredWindow(windowId: 1, pid: 100, appName: "App", title: "W1",
-                               frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+                               frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
     let w2 = DiscoveredWindow(windowId: 2, pid: 100, appName: "App", title: "W2",
-                               frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+                               frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
     let w3 = DiscoveredWindow(windowId: 3, pid: 200, appName: "Other", title: "W3",
-                               frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+                               frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
 
     let (engine, backend) = try await makeEngine(windows: [w1, w2, w3])
     #expect(engine.currentTree.allWindows.count == 3)
@@ -354,10 +354,10 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     let (engine, backend) = try await makeEngine(config: config)
 
     let newWin = DiscoveredWindow(windowId: 42, pid: 100, appName: "Safari", title: "New Tab",
-                                   frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+                                   frame: CGRect(x: 0, y: 0, width: 1000, height: 800),
                                    subrole: "AXStandardWindow")
     backend.addWindow(newWin)
-    backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "Safari", title: "New Tab", subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600)))
+    backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "Safari", title: "New Tab", subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 1000, height: 800)))
     await engine.processEvents()
 
     let tree = engine.currentTree
@@ -484,7 +484,7 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     )
     let standard = DiscoveredWindow(
         windowId: 2, pid: 200, appName: "Safari", title: "Tab 1",
-        frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+        frame: CGRect(x: 0, y: 0, width: 1000, height: 800),
         subrole: "AXStandardWindow"
     )
     let (engine, _) = try await makeEngine(windows: [dialog, standard])
@@ -510,9 +510,9 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
 @Test func windowCreatedWithEmptySubroleIsInserted() async throws {
     let (engine, backend) = try await makeEngine()
     let newWin = DiscoveredWindow(windowId: 42, pid: 100, appName: "App", title: "Win",
-                                   frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+                                   frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
     backend.addWindow(newWin)
-    backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "App", title: "Win", subrole: "", frame: CGRect(x: 0, y: 0, width: 800, height: 600)))
+    backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "App", title: "Win", subrole: "", frame: CGRect(x: 0, y: 0, width: 1000, height: 800)))
     await engine.processEvents()
 
     let tree = engine.currentTree
@@ -527,7 +527,7 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
     )
     let normal = DiscoveredWindow(
         windowId: 2, pid: 200, appName: "App", title: "Normal",
-        frame: CGRect(x: 0, y: 0, width: 800, height: 600)
+        frame: CGRect(x: 0, y: 0, width: 1000, height: 800)
     )
     let (engine, _) = try await makeEngine(windows: [tiny, normal])
     let tree = engine.currentTree
@@ -547,4 +547,67 @@ private func window(_ id: UInt32, app: String = "App", title: String = "") -> Di
 
     let tree = engine.currentTree
     #expect(tree.allWindows.isEmpty)
+}
+
+// MARK: - Auto-float small windows
+
+@Test func smallWindowAutoFloatsAtStartup() async throws {
+    let small = DiscoveredWindow(
+        windowId: 1, pid: 100, appName: "1Password", title: "Mini",
+        frame: CGRect(x: 200, y: 200, width: 400, height: 300)
+    )
+    let large = DiscoveredWindow(
+        windowId: 2, pid: 200, appName: "Safari", title: "Tab",
+        frame: CGRect(x: 0, y: 0, width: 1000, height: 800)
+    )
+    let (engine, _) = try await makeEngine(windows: [small, large])
+    let tree = engine.currentTree
+    #expect(tree.allWindows.count == 2)
+
+    let smallNode = tree.allWindows.first { $0.windowId == 1 }!
+    let largeNode = tree.allWindows.first { $0.windowId == 2 }!
+    if case .floating = smallNode.state { } else {
+        #expect(Bool(false), "Expected small window to be auto-floated")
+    }
+    #expect(largeNode.state == .tiling)
+}
+
+@Test func smallWindowAutoFloatsOnCreation() async throws {
+    let (engine, backend) = try await makeEngine()
+    let small = DiscoveredWindow(
+        windowId: 42, pid: 100, appName: "1Password", title: "Mini",
+        frame: CGRect(x: 200, y: 200, width: 400, height: 300)
+    )
+    backend.addWindow(small)
+    backend.emit(.windowCreated(pid: 100, windowId: 42, appName: "1Password", title: "Mini",
+                                subrole: "AXStandardWindow", frame: CGRect(x: 200, y: 200, width: 400, height: 300)))
+    await engine.processEvents()
+
+    let tree = engine.currentTree
+    #expect(tree.allWindows.count == 1)
+    if case .floating = tree.allWindows[0].state { } else {
+        #expect(Bool(false), "Expected small window to be auto-floated")
+    }
+}
+
+@Test func smallWindowDoesNotAffectTilingLayout() async throws {
+    let (engine, backend) = try await makeEngine(windows: [
+        window(1, app: "Safari"),
+        window(2, app: "Terminal")
+    ])
+    backend.resetRecordedCalls()
+
+    // Add a small window — should auto-float and not cause tiling windows to move
+    let small = DiscoveredWindow(
+        windowId: 3, pid: 300, appName: "1Password", title: "Mini",
+        frame: CGRect(x: 200, y: 200, width: 400, height: 300)
+    )
+    backend.addWindow(small)
+    backend.emit(.windowCreated(pid: 300, windowId: 3, appName: "1Password", title: "Mini",
+                                subrole: "AXStandardWindow", frame: CGRect(x: 200, y: 200, width: 400, height: 300)))
+    await engine.processEvents()
+
+    // The two tiling windows should not have been re-laid out
+    let tilingSetFrames = backend.setFrameCalls.filter { $0.windowId == 1 || $0.windowId == 2 }
+    #expect(tilingSetFrames.isEmpty)
 }

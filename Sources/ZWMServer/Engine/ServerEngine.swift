@@ -92,10 +92,11 @@ public final class ServerEngine: @unchecked Sendable {
                     }
                 }
 
-                // Apply window rules to discovered windows
+                // Apply window rules and auto-float small windows
                 for window in windows where window.windowLevel == 0 && !window.isMinimized && window.isStandardWindow {
                     if let nodeId = tree.allWindows.first(where: { $0.windowId == window.windowId })?.id {
                         applyWindowRules(nodeId: nodeId, appName: window.appName, title: window.title)
+                        autoFloatIfSmall(nodeId: nodeId, frame: window.frame, monitors: monitors)
                     }
                 }
 
@@ -225,6 +226,7 @@ public final class ServerEngine: @unchecked Sendable {
                     }
                     if let nodeId = tree.allWindows.first(where: { $0.windowId == window.windowId })?.id {
                         applyWindowRules(nodeId: nodeId, appName: window.appName, title: window.title)
+                        autoFloatIfSmall(nodeId: nodeId, frame: window.frame, monitors: monitors)
                         // Only auto-focus if no window is currently focused
                         if tree.focusedWindowId == nil {
                             tree = tree.setFocus(nodeId)
@@ -414,6 +416,22 @@ public final class ServerEngine: @unchecked Sendable {
     func findNodeByWindowId(_ windowId: UInt32, in searchTree: TreeState? = nil) -> NodeId? {
         let t = searchTree ?? tree
         return t.allWindows.first { $0.windowId == windowId }?.id
+    }
+
+    /// Auto-float a window if its frame area is less than 1/4 of the monitor area.
+    /// Called under lock after inserting a window.
+    private func autoFloatIfSmall(nodeId: NodeId, frame: CGRect, monitors: [MonitorInfo]) {
+        guard let ws = tree.workspaceContaining(nodeId),
+              let monitorId = ws.monitorId,
+              let monitor = monitors.first(where: { $0.id == monitorId }) else { return }
+
+        let monitorArea = monitor.visibleFrame.width * monitor.visibleFrame.height
+        let windowArea = frame.width * frame.height
+
+        if windowArea < monitorArea / 4 {
+            print("zwm: auto-floating small window (area \(Int(windowArea)) < \(Int(monitorArea / 4)))")
+            tree = tree.setWindowState(nodeId, .floating(frame))
+        }
     }
 
     private func focusedMacWindowId(_ tree: TreeState) -> UInt32? {
