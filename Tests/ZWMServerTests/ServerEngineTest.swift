@@ -590,6 +590,75 @@ private func window(_ id: UInt32, app: String = "App", title: String = "", frame
     }
 }
 
+// MARK: - Overflow to next workspace
+
+@Test func fifthWindowOverflowsToNextWorkspace() async throws {
+    let config = EngineConfig(workspaceNames: ["1", "2", "3"], maxTilingWindows: 4)
+    let (engine, _) = try await makeEngine(
+        windows: [window(1), window(2), window(3), window(4), window(5)],
+        config: config
+    )
+    let tree = engine.currentTree
+    let ws1 = tree.workspace("1")!
+    let ws2 = tree.workspace("2")!
+
+    // 4 windows in workspace 1, 1 overflows to workspace 2
+    #expect(tree.tilingWindowCount(in: ws1.id) == 4)
+    #expect(tree.tilingWindowCount(in: ws2.id) == 1)
+}
+
+@Test func overflowFillsMultipleWorkspaces() async throws {
+    let config = EngineConfig(workspaceNames: ["1", "2", "3"], maxTilingWindows: 2)
+    let (engine, _) = try await makeEngine(
+        windows: [window(1), window(2), window(3), window(4), window(5)],
+        config: config
+    )
+    let tree = engine.currentTree
+    let ws1 = tree.workspace("1")!
+    let ws2 = tree.workspace("2")!
+    let ws3 = tree.workspace("3")!
+
+    #expect(tree.tilingWindowCount(in: ws1.id) == 2)
+    #expect(tree.tilingWindowCount(in: ws2.id) == 2)
+    #expect(tree.tilingWindowCount(in: ws3.id) == 1)
+}
+
+@Test func newWindowOverflowsOnCreation() async throws {
+    let config = EngineConfig(workspaceNames: ["1", "2", "3"], maxTilingWindows: 2)
+    let (engine, backend) = try await makeEngine(
+        windows: [window(1), window(2)],
+        config: config
+    )
+    #expect(engine.currentTree.tilingWindowCount(in: engine.currentTree.workspace("1")!.id) == 2)
+
+    // Add a 3rd window via event — should overflow to workspace 2
+    let newWin = DiscoveredWindow(windowId: 3, pid: 3, appName: "App", title: "W3",
+                                   frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+    backend.addWindow(newWin)
+    backend.emit(.windowCreated(pid: 3, windowId: 3, appName: "App", title: "W3",
+                                subrole: "AXStandardWindow", frame: CGRect(x: 0, y: 0, width: 1000, height: 800)))
+    await engine.processEvents()
+
+    let tree = engine.currentTree
+    #expect(tree.tilingWindowCount(in: tree.workspace("1")!.id) == 2)
+    #expect(tree.tilingWindowCount(in: tree.workspace("2")!.id) == 1)
+    #expect(tree.allWindows.first { $0.windowId == 3 }.map { tree.workspaceContaining($0.id)?.name } == "2")
+}
+
+@Test func underMaxDoesNotOverflow() async throws {
+    let config = EngineConfig(workspaceNames: ["1", "2", "3"], maxTilingWindows: 4)
+    let (engine, _) = try await makeEngine(
+        windows: [window(1), window(2), window(3)],
+        config: config
+    )
+    let tree = engine.currentTree
+    let ws1 = tree.workspace("1")!
+
+    // 3 windows fit in workspace 1 (max is 4)
+    #expect(tree.tilingWindowCount(in: ws1.id) == 3)
+    #expect(tree.tilingWindowCount(in: tree.workspace("2")!.id) == 0)
+}
+
 @Test func smallWindowDoesNotAffectTilingLayout() async throws {
     let (engine, backend) = try await makeEngine(windows: [
         window(1, app: "Safari"),

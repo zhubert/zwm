@@ -90,6 +90,24 @@ public struct TreeState: Sendable, Equatable {
         }
     }
 
+    /// Count tiling windows in a workspace (recursively through containers).
+    public func tilingWindowCount(in workspaceId: NodeId) -> Int {
+        guard let ws = workspaceNode(workspaceId) else { return 0 }
+        var count = 0
+        var stack = ws.childIds
+        while let id = stack.popLast() {
+            switch nodes[id] {
+            case .window(let w) where w.state == .tiling:
+                count += 1
+            case .tilingContainer(let tc):
+                stack.append(contentsOf: tc.childIds)
+            default:
+                break
+            }
+        }
+        return count
+    }
+
     /// Find the workspace that (transitively) contains the given node.
     public func workspaceContaining(_ nodeId: NodeId) -> WorkspaceNode? {
         var current = nodeId

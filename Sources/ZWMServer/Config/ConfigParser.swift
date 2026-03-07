@@ -44,6 +44,11 @@ public func parseConfig(_ toml: String) throws -> EngineConfig {
         config.keybindings = modes
     }
 
+    // max-tiling-windows = 4
+    if let maxTiling = table["max-tiling-windows"]?.int {
+        config.maxTilingWindows = maxTiling
+    }
+
     // [[on-window-detected]]
     if let rules = table["on-window-detected"]?.array {
         var windowRules: [WindowRule] = []

@@ -1,6 +1,9 @@
 # ZWM Configuration
 # Place this file at ~/.zwm.toml or ~/.config/zwm/zwm.toml
 
+# Maximum tiling windows per workspace before overflowing to the next
+max-tiling-windows = 4
+
 [gaps]
 inner = 0
 outer = 0

@@ -6,17 +6,20 @@ public struct EngineConfig: Sendable, Equatable {
     public var workspaceNames: [String]
     public var keybindings: [String: [String: String]]  // mode → (key → command)
     public var windowRules: [WindowRule]
+    public var maxTilingWindows: Int
 
     public init(
         gaps: GapConfig = GapConfig(),
         workspaceNames: [String] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
         keybindings: [String: [String: String]] = [:],
-        windowRules: [WindowRule] = []
+        windowRules: [WindowRule] = [],
+        maxTilingWindows: Int = 4
     ) {
         self.gaps = gaps
         self.workspaceNames = workspaceNames
         self.keybindings = keybindings
         self.windowRules = windowRules
+        self.maxTilingWindows = maxTilingWindows
     }
 }
 

@@ -67,11 +67,13 @@ public final class ServerEngine: @unchecked Sendable {
                 }
             }
 
-            // Add discovered windows to the first workspace
+            // Add discovered windows, overflowing to next workspace when full
             if let firstWsId = tree.workspaceIds.first {
                 for window in windows where window.windowLevel == 0 && !window.isMinimized && window.isStandardWindow {
+                    let targetWsId = workspaceWithRoom(startingFrom: firstWsId) ?? firstWsId
+
                     if let focusedId = tree.focusedWindowId,
-                       tree.workspaceContaining(focusedId)?.id == firstWsId,
+                       tree.workspaceContaining(focusedId)?.id == targetWsId,
                        let focusedWin = tree.windowNode(focusedId),
                        focusedWin.state == .tiling {
                         tree = tree.insertWindowBSP(
@@ -83,7 +85,7 @@ public final class ServerEngine: @unchecked Sendable {
                         tree = tree.insertWindow(
                             windowId: window.windowId, appPid: window.pid,
                             appName: window.appName, title: window.title,
-                            inParent: firstWsId
+                            inParent: targetWsId
                         )
                     }
                     // Set focus to last inserted so next window BSP-splits from it
@@ -204,12 +206,14 @@ public final class ServerEngine: @unchecked Sendable {
                 tree = tree.removeNode(s.nodeId)
             }
 
-            // 5. Add genuinely new windows
+            // 5. Add genuinely new windows, overflowing to next workspace when full
             for window in newWindows {
-                print("zwm: sync: added \(window.windowId) (\(window.appName))")
                 if let wsId = activeWorkspaceId() {
+                    let targetWsId = workspaceWithRoom(startingFrom: wsId) ?? wsId
+                    print("zwm: sync: added \(window.windowId) (\(window.appName)) to workspace \(targetWsId)")
+
                     if let focusedId = tree.focusedWindowId,
-                       tree.workspaceContaining(focusedId)?.id == wsId,
+                       tree.workspaceContaining(focusedId)?.id == targetWsId,
                        let focusedWin = tree.windowNode(focusedId),
                        focusedWin.state == .tiling {
                         tree = tree.insertWindowBSP(
@@ -221,7 +225,7 @@ public final class ServerEngine: @unchecked Sendable {
                         tree = tree.insertWindow(
                             windowId: window.windowId, appPid: window.pid,
                             appName: window.appName, title: window.title,
-                            inParent: wsId
+                            inParent: targetWsId
                         )
                     }
                     if let nodeId = tree.allWindows.first(where: { $0.windowId == window.windowId })?.id {
@@ -416,6 +420,32 @@ public final class ServerEngine: @unchecked Sendable {
     func findNodeByWindowId(_ windowId: UInt32, in searchTree: TreeState? = nil) -> NodeId? {
         let t = searchTree ?? tree
         return t.allWindows.first { $0.windowId == windowId }?.id
+    }
+
+    /// Find a workspace that has room for another tiling window, starting from the given workspace.
+    /// Returns the workspace ID, or nil if all workspaces are full.
+    func workspaceWithRoom(startingFrom wsId: NodeId) -> NodeId? {
+        let max = _config.maxTilingWindows
+        guard max > 0 else { return wsId }
+
+        // Try the given workspace first
+        if tree.tilingWindowCount(in: wsId) < max {
+            return wsId
+        }
+
+        // Try subsequent workspaces in order
+        if let startIdx = tree.workspaceIds.firstIndex(of: wsId) {
+            for i in 1..<tree.workspaceIds.count {
+                let idx = (startIdx + i) % tree.workspaceIds.count
+                let candidateId = tree.workspaceIds[idx]
+                if tree.tilingWindowCount(in: candidateId) < max {
+                    print("zwm: workspace \(wsId) full (\(max) tiling windows), overflowing to \(candidateId)")
+                    return candidateId
+                }
+            }
+        }
+
+        return nil
     }
 
     /// Auto-float a window if its frame area is less than 1/4 of the monitor area.
