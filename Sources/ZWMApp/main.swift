@@ -46,18 +46,10 @@ Task {
     }
 }
 
-// Start event processing loop
+// Periodic validation loop — syncs tree with OS reality
 Task {
     while true {
-        await engine.processEvents()
-        try? await Task.sleep(nanoseconds: 16_000_000) // ~60Hz
-    }
-}
-
-// Periodic validation timer — catches missed events, dead observers, state drift
-Task {
-    while true {
-        try? await Task.sleep(nanoseconds: 5_000_000_000) // every 5 seconds
+        try? await Task.sleep(nanoseconds: 500_000_000) // every 500ms
         await engine.periodicValidation()
     }
 }
