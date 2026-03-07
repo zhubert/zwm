@@ -18,16 +18,15 @@ private func treeWithWindows(
 ) -> (TreeState, [NodeId]) {
     var tree = TreeState().addWorkspace(name: "1", monitorId: monitorId)
     let wsId = tree.workspaceIds[0]
+    tree = tree.setWorkspaceLayout(wsId, layout)
 
-    // If we need a specific layout, wrap in a container
+    // Add windows directly to workspace
     if count > 1 {
-        tree = tree.insertContainer(inParent: wsId, layout: layout)
-        let containerId = tree.workspaceNode(wsId)!.childIds[0]
         var windowIds: [NodeId] = []
         for i in 0..<count {
             tree = tree.insertWindow(
                 windowId: UInt32(i + 1), appPid: 1, appName: "App", title: "W\(i + 1)",
-                inParent: containerId
+                inParent: wsId
             )
             let winId = tree.allWindows.first { $0.windowId == UInt32(i + 1) }!.id
             windowIds.append(winId)
@@ -83,7 +82,7 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
     assertClose(right.origin.x, 960)
 }
 
-@Test func threeWindowsHorizontalSplit() {
+@Test func threeWindowsHorizontalGrid() {
     let (tree, windowIds) = treeWithWindows(count: 3, layout: .horizontal)
     let result = layoutTree(tree, monitors: [testMonitor])
 
@@ -91,10 +90,13 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
     let w2 = result.frames[windowIds[1]]!
     let w3 = result.frames[windowIds[2]]!
 
-    // Each should be 1/3 of width
-    assertClose(w1.size.width, 640)
-    assertClose(w2.size.width, 640)
-    assertClose(w3.size.width, 640)
+    // Grid: 2 cols, first col has 2 stacked, second col has 1 full-height
+    assertClose(w1.size.width, 960)
+    assertClose(w1.size.height, 527.5)
+    assertClose(w2.size.width, 960)
+    assertClose(w2.size.height, 527.5)
+    assertClose(w3.size.width, 960)
+    assertClose(w3.size.height, 1055)
 }
 
 // MARK: - Vertical split
@@ -106,15 +108,11 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
     let top = result.frames[windowIds[0]]!
     let bottom = result.frames[windowIds[1]]!
 
-    // Each should be half the height
+    // Grid with vertical direction: 2 rows, each full width
     assertClose(top.size.height, 527.5)
     assertClose(bottom.size.height, 527.5)
-
-    // Full width
     assertClose(top.size.width, 1920)
     assertClose(bottom.size.width, 1920)
-
-    // Stacked vertically
     assertClose(top.origin.y, 25)
     assertClose(bottom.origin.y, 25 + 527.5)
 }
@@ -168,25 +166,23 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
 
 // MARK: - Nested containers
 
-@Test func nestedHorizontalAndVerticalSplit() {
+@Test func nestedContainersFlattenToGrid() {
     // Create: workspace -> h-container -> [window1, v-container -> [window2, window3]]
+    // Grid flattens all containers: 3 windows → 2 cols grid
     var tree = TreeState().addWorkspace(name: "1", monitorId: 1)
     let wsId = tree.workspaceIds[0]
 
     tree = tree.insertContainer(inParent: wsId, layout: .horizontal)
     let hContainerId = tree.workspaceNode(wsId)!.childIds[0]
 
-    // Add window1 to h-container
     tree = tree.insertWindow(
         windowId: 1, appPid: 1, appName: "App", title: "W1", inParent: hContainerId
     )
     let win1 = tree.allWindows.first { $0.windowId == 1 }!.id
 
-    // Add v-container to h-container
     tree = tree.insertContainer(inParent: hContainerId, layout: .vertical)
     let vContainerId = tree.containerNode(hContainerId)!.childIds[1]
 
-    // Add window2 and window3 to v-container
     tree = tree.insertWindow(
         windowId: 2, appPid: 1, appName: "App", title: "W2", inParent: vContainerId
     )
@@ -202,33 +198,29 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
     let f2 = result.frames[win2]!
     let f3 = result.frames[win3]!
 
-    // win1 gets left half, win2 + win3 share right half vertically
+    // Grid: 2 cols, first col has W1+W2 stacked, second col has W3 full-height
     assertClose(f1.size.width, 960)
-    assertClose(f1.size.height, 1055)
-
+    assertClose(f1.size.height, 527.5)
     assertClose(f2.size.width, 960)
-    assertClose(f3.size.width, 960)
     assertClose(f2.size.height, 527.5)
-    assertClose(f3.size.height, 527.5)
+    assertClose(f3.size.width, 960)
+    assertClose(f3.size.height, 1055)
 }
 
 // MARK: - Weights
 
-@Test func unequalWeightsProduceProportionalSizes() {
+@Test func gridIgnoresWeights() {
     var tree = TreeState().addWorkspace(name: "1", monitorId: 1)
     let wsId = tree.workspaceIds[0]
 
-    tree = tree.insertContainer(inParent: wsId, layout: .horizontal)
-    let containerId = tree.workspaceNode(wsId)!.childIds[0]
-
-    // Insert windows with different weights
+    // Insert windows with different weights — grid gives equal space regardless
     tree = tree.insertWindow(
         windowId: 1, appPid: 1, appName: "App", title: "W1",
-        inParent: containerId, weight: 2.0
+        inParent: wsId, weight: 2.0
     )
     tree = tree.insertWindow(
         windowId: 2, appPid: 1, appName: "App", title: "W2",
-        inParent: containerId, weight: 1.0
+        inParent: wsId, weight: 1.0
     )
     let win1 = tree.allWindows.first { $0.windowId == 1 }!.id
     let win2 = tree.allWindows.first { $0.windowId == 2 }!.id
@@ -238,9 +230,9 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
     let f1 = result.frames[win1]!
     let f2 = result.frames[win2]!
 
-    // Weight 2:1 means 2/3 and 1/3 of total width
-    assertClose(f1.size.width, 1280) // 1920 * 2/3
-    assertClose(f2.size.width, 640)  // 1920 * 1/3
+    // Grid: equal halves regardless of weight
+    assertClose(f1.size.width, 960)
+    assertClose(f2.size.width, 960)
 }
 
 // MARK: - Empty cases
@@ -401,8 +393,9 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
 
 // MARK: - BSP layout
 
-@Test func bspThreeWindowsLayout() {
+@Test func bspThreeWindowsGridLayout() {
     // Build BSP: workspace(h) → [W1, vContainer → [W2, W3]]
+    // Grid flattens to [W1, W2, W3] → 2 cols grid
     var tree = TreeState().addWorkspace(name: "1", monitorId: 1)
     let wsId = tree.workspaceIds[0]
 
@@ -421,20 +414,13 @@ private func assertClose(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 0.5, s
     let f2 = result.frames[win2]!
     let f3 = result.frames[win3]!
 
-    // W1: left half, full height
-    assertClose(f1.origin.x, 0)
+    // Grid: 2 cols, first col has W1+W2 stacked, second col has W3 full-height
     assertClose(f1.size.width, 960)
-    assertClose(f1.size.height, 1055)
-
-    // W2: right half, top half
-    assertClose(f2.origin.x, 960)
+    assertClose(f1.size.height, 527.5)
     assertClose(f2.size.width, 960)
     assertClose(f2.size.height, 527.5)
-
-    // W3: right half, bottom half
-    assertClose(f3.origin.x, 960)
     assertClose(f3.size.width, 960)
-    assertClose(f3.size.height, 527.5)
+    assertClose(f3.size.height, 1055)
 }
 
 @Test func bspFourWindowsGridLayout() {
