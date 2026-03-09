@@ -2,15 +2,19 @@
 
 A tiling window manager for macOS, written in Swift.
 
-ZWM automatically arranges your windows into non-overlapping tiles using a binary tree layout. It uses vim-style keybindings, supports multiple workspaces, and runs as a lightweight background app with a CLI for control.
+> **This is personalized software.** ZWM does exactly what I want from a window manager — but it probably won't do what *you* want out of the box. If it looks interesting, fork it and tweak it to fit your workflow!
+
+ZWM automatically arranges your windows into an equal-sized grid layout. It uses vim-style keybindings, supports multiple workspaces, and runs as a lightweight background app with a CLI for control.
 
 ## Features
 
-- **Binary tree tiling** — windows are split horizontally or vertically, forming a tree you navigate and rearrange
+- **Grid tiling** — windows are arranged in an equal-sized grid, oriented horizontally or vertically
 - **Vim-style keybindings** — `alt-h/j/k/l` to focus, `alt-shift-h/j/k/l` to move
 - **Workspaces** — 9 workspaces per monitor, switched with `alt-1` through `alt-9`
-- **Configurable gaps** — inner and outer gaps between windows
+- **Workspace overflow** — when a workspace hits its tiling limit (`max-tiling-windows`), new windows automatically overflow to the next workspace
+- **Auto-float small windows** — windows smaller than 1/4 of the monitor area are automatically floated
 - **Window rules** — auto-float specific apps or window titles
+- **Configurable gaps** — inner and outer gaps between windows
 - **Hot-reload config** — edit your config and changes apply immediately
 - **Multi-monitor support** — each monitor gets its own set of workspaces
 - **CLI control** — `zwm` command to query and control the window manager
@@ -24,7 +28,7 @@ ZWM automatically arranges your windows into non-overlapping tiles using a binar
 ## Install
 
 ```sh
-git clone https://github.com/your-user/zwm.git
+git clone https://github.com/zhubert/zwm.git
 cd zwm
 make install
 ```
@@ -52,9 +56,12 @@ Config files are left in place.
 ZWM reads config from `~/.zwm.toml` or `~/.config/zwm/zwm.toml`. Changes are picked up automatically.
 
 ```toml
+# Maximum tiling windows per workspace before overflowing to the next
+max-tiling-windows = 4
+
 [gaps]
-inner = 8
-outer = 8
+inner = 0
+outer = 0
 
 [keybindings.main]
 # Focus
@@ -102,17 +109,20 @@ See `resources/default-config.toml` for the full default configuration.
 The `zwm` CLI communicates with the running server over a UNIX socket.
 
 ```sh
-zwm focus left
-zwm move right
-zwm workspace 3
-zwm move-to-workspace 2
-zwm layout horizontal
-zwm layout vertical
-zwm fullscreen
-zwm close
-zwm reload-config
-zwm list-windows
-zwm list-workspaces
+zwm focus left          # Focus window in direction
+zwm move right          # Move window in direction
+zwm workspace 3         # Switch to workspace
+zwm move-to-workspace 2 # Move focused window to workspace
+zwm layout horizontal   # Set horizontal grid layout
+zwm layout vertical     # Set vertical grid layout
+zwm layout floating     # Float the focused window
+zwm layout tiling       # Tile the focused window
+zwm fullscreen          # Toggle fullscreen
+zwm close               # Close focused window
+zwm reload-config       # Reload configuration
+zwm list-windows        # List all managed windows
+zwm list-workspaces     # List all workspaces
+zwm debug-tree          # Dump tree structure (debugging)
 ```
 
 ## Architecture
