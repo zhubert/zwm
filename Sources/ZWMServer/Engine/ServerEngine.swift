@@ -448,7 +448,7 @@ public final class ServerEngine: @unchecked Sendable {
         return nil
     }
 
-    /// Auto-float a window if its frame area is less than 1/4 of the monitor area.
+    /// Auto-float a window if its frame area is less than 1/8 of the monitor area.
     /// Called under lock after inserting a window.
     private func autoFloatIfSmall(nodeId: NodeId, frame: CGRect, monitors: [MonitorInfo]) {
         guard let ws = tree.workspaceContaining(nodeId),
@@ -458,8 +458,8 @@ public final class ServerEngine: @unchecked Sendable {
         let monitorArea = monitor.visibleFrame.width * monitor.visibleFrame.height
         let windowArea = frame.width * frame.height
 
-        if windowArea < monitorArea / 4 {
-            print("zwm: auto-floating small window (area \(Int(windowArea)) < \(Int(monitorArea / 4)))")
+        if windowArea < monitorArea / 8 {
+            print("zwm: auto-floating small window (area \(Int(windowArea)) < \(Int(monitorArea / 8)))")
             tree = tree.setWindowState(nodeId, .floating(frame))
         }
     }

@@ -12,7 +12,7 @@ ZWM automatically arranges your windows into an equal-sized grid layout. It uses
 - **Vim-style keybindings** — `alt-h/j/k/l` to focus, `alt-shift-h/j/k/l` to move
 - **Workspaces** — 9 workspaces per monitor, switched with `alt-1` through `alt-9`
 - **Workspace overflow** — when a workspace hits its tiling limit (`max-tiling-windows`), new windows automatically overflow to the next workspace
-- **Auto-float small windows** — windows smaller than 1/4 of the monitor area are automatically floated
+- **Auto-float small windows** — windows smaller than 1/8 of the monitor area are automatically floated
 - **Window rules** — auto-float specific apps or window titles
 - **Configurable gaps** — inner and outer gaps between windows
 - **Hot-reload config** — edit your config and changes apply immediately
@@ -22,10 +22,29 @@ ZWM automatically arranges your windows into an equal-sized grid layout. It uses
 ## Requirements
 
 - macOS 14 (Sonoma) or later
-- Swift 6.0+ toolchain (Xcode 16+ or matching CommandLineTools)
 - Accessibility permission (System Settings > Privacy & Security > Accessibility)
 
 ## Install
+
+```sh
+brew install zhubert/tap/zwm
+```
+
+Start ZWM as a background service:
+
+```sh
+brew services start zwm
+```
+
+Then grant Accessibility permission when prompted.
+
+To stop:
+
+```sh
+brew services stop zwm
+```
+
+### Build from source
 
 ```sh
 git clone https://github.com/zhubert/zwm.git
@@ -35,15 +54,13 @@ make install
 
 This builds a release binary, copies `ZWM.app` to `/Applications/`, and installs the `zwm` CLI to `/usr/local/bin/`. A default config is placed at `~/.zwm.toml` if one doesn't already exist.
 
-To start:
+## Uninstall
 
 ```sh
-open /Applications/ZWM.app
+brew uninstall zwm
 ```
 
-Then grant Accessibility permission when prompted.
-
-## Uninstall
+Or if built from source:
 
 ```sh
 make uninstall
@@ -106,24 +123,7 @@ See `resources/default-config.toml` for the full default configuration.
 
 ## CLI
 
-The `zwm` CLI communicates with the running server over a UNIX socket.
-
-```sh
-zwm focus left          # Focus window in direction
-zwm move right          # Move window in direction
-zwm workspace 3         # Switch to workspace
-zwm move-to-workspace 2 # Move focused window to workspace
-zwm layout horizontal   # Set horizontal grid layout
-zwm layout vertical     # Set vertical grid layout
-zwm layout floating     # Float the focused window
-zwm layout tiling       # Tile the focused window
-zwm fullscreen          # Toggle fullscreen
-zwm close               # Close focused window
-zwm reload-config       # Reload configuration
-zwm list-windows        # List all managed windows
-zwm list-workspaces     # List all workspaces
-zwm debug-tree          # Dump tree structure (debugging)
-```
+The `zwm` CLI communicates with the running server over a UNIX socket. Run `zwm --help` for available commands.
 
 ## Architecture
 
@@ -139,8 +139,6 @@ The server (`zwm-server`) runs as a background macOS app. The CLI (`zwm`) sends 
 ./build-debug.sh           # Debug build
 ./run-tests.sh             # Run all tests
 swift test --filter Foo     # Run specific tests
-make build                  # Build via make
-make test                   # Test via make
 ```
 
 ## Acknowledgments
