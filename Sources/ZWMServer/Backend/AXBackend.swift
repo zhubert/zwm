@@ -68,12 +68,13 @@ extension AXBackend: WindowBackend {
                 let title = axStringAttribute(windowElement, kAXTitleAttribute) ?? ""
                 let level = windowLevel(for: windowId)
                 let subrole = axStringAttribute(windowElement, kAXSubroleAttribute) ?? ""
+                let hasCloseButton = axHasCloseButton(windowElement)
 
-                print("zwm: discoverWindows:   wid=\(windowId) level=\(level) minimized=\(isMinimized) subrole=\(subrole) title=\"\(title)\"")
+                print("zwm: discoverWindows:   wid=\(windowId) level=\(level) minimized=\(isMinimized) subrole=\(subrole) closeBtn=\(hasCloseButton) title=\"\(title)\"")
                 windows.append(DiscoveredWindow(
                     windowId: windowId, pid: app.pid, appName: app.name, title: title,
                     frame: frame, isMinimized: isMinimized, isFullscreen: isFullscreen,
-                    windowLevel: level, subrole: subrole
+                    windowLevel: level, subrole: subrole, hasCloseButton: hasCloseButton
                 ))
             }
         }
@@ -488,6 +489,12 @@ extension AXBackend: WindowBackend {
 
     private func setAxAttribute(_ element: AXUIElement, _ attribute: CFString, _ value: Bool) {
         AXUIElementSetAttributeValue(element, attribute, value ? kCFBooleanTrue : kCFBooleanFalse)
+    }
+
+    private func axHasCloseButton(_ element: AXUIElement) -> Bool {
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &value)
+        return result == .success && value != nil
     }
 
     private func windowLevel(for windowId: UInt32) -> Int {

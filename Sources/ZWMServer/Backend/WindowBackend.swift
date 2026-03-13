@@ -44,12 +44,16 @@ public struct DiscoveredWindow: Sendable, Equatable {
     public let isFullscreen: Bool
     public let windowLevel: Int
     public let subrole: String
+    public let hasCloseButton: Bool
 
     /// Minimum dimension (width or height) for a window to be managed.
     public static let minManagedSize: CGFloat = 50
 
     public var isStandardWindow: Bool {
-        let validSubrole = subrole.isEmpty || subrole == "AXStandardWindow"
+        // Accept AXStandardWindow unconditionally. For windows with empty subrole
+        // (e.g. some apps don't set it), require a close button to distinguish
+        // real windows from popups/autocomplete dropdowns.
+        let validSubrole = subrole == "AXStandardWindow" || (subrole.isEmpty && hasCloseButton)
         let largeEnough = frame.width >= Self.minManagedSize && frame.height >= Self.minManagedSize
         return validSubrole && largeEnough
     }
@@ -63,7 +67,8 @@ public struct DiscoveredWindow: Sendable, Equatable {
         isMinimized: Bool = false,
         isFullscreen: Bool = false,
         windowLevel: Int = 0,
-        subrole: String = ""
+        subrole: String = "",
+        hasCloseButton: Bool = true
     ) {
         self.windowId = windowId
         self.pid = pid
@@ -74,6 +79,7 @@ public struct DiscoveredWindow: Sendable, Equatable {
         self.isFullscreen = isFullscreen
         self.windowLevel = windowLevel
         self.subrole = subrole
+        self.hasCloseButton = hasCloseButton
     }
 }
 
