@@ -60,14 +60,17 @@ import Testing
     run = "layout floating"
 
     [[on-window-detected]]
-    match-title = "Settings"
+    match-title = "System Settings"
+    exact = true
     run = "layout floating"
     """
     let config = try parseConfig(toml)
     #expect(config.windowRules.count == 2)
     #expect(config.windowRules[0].matchAppName == "Finder")
+    #expect(config.windowRules[0].exact == false)
     #expect(config.windowRules[0].command == "layout floating")
-    #expect(config.windowRules[1].matchTitle == "Settings")
+    #expect(config.windowRules[1].matchTitle == "System Settings")
+    #expect(config.windowRules[1].exact == true)
 }
 
 @Test func invalidTomlThrows() {

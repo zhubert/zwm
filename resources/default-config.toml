@@ -64,5 +64,6 @@ match-title = "Preferences"
 run = "layout floating"
 
 [[on-window-detected]]
-match-title = "Settings"
+match-title = "System Settings"
+exact = true
 run = "layout floating"

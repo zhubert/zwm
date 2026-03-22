@@ -372,10 +372,18 @@ public final class ServerEngine: @unchecked Sendable {
 
     private func matchesRule(_ rule: WindowRule, appName: String, title: String) -> Bool {
         if let matchApp = rule.matchAppName {
-            guard appName.localizedCaseInsensitiveContains(matchApp) else { return false }
+            if rule.exact {
+                guard appName.caseInsensitiveCompare(matchApp) == .orderedSame else { return false }
+            } else {
+                guard appName.localizedCaseInsensitiveContains(matchApp) else { return false }
+            }
         }
         if let matchTitle = rule.matchTitle {
-            guard title.localizedCaseInsensitiveContains(matchTitle) else { return false }
+            if rule.exact {
+                guard title.caseInsensitiveCompare(matchTitle) == .orderedSame else { return false }
+            } else {
+                guard title.localizedCaseInsensitiveContains(matchTitle) else { return false }
+            }
         }
         // At least one criterion must be specified
         return rule.matchAppName != nil || rule.matchTitle != nil

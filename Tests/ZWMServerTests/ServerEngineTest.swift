@@ -406,6 +406,29 @@ private func window(_ id: UInt32, app: String = "App", title: String = "", frame
     #expect(mainNode.state == .tiling)
 }
 
+@Test func windowRuleExactMatchRejectsSubstring() async throws {
+    let rule = WindowRule(matchTitle: "System Settings", exact: true, command: "layout floating")
+    let config = EngineConfig(workspaceNames: ["1"], windowRules: [rule])
+    let (engine, _) = try await makeEngine(
+        windows: [
+            window(1, app: "Safari", title: "Webhooks · Settings · zhubert/erg"),
+            window(2, app: "System Settings", title: "System Settings"),
+        ],
+        config: config
+    )
+
+    let tree = engine.currentTree
+    let safariNode = tree.allWindows.first { $0.appName == "Safari" }!
+    let settingsNode = tree.allWindows.first { $0.appName == "System Settings" }!
+
+    #expect(safariNode.state == .tiling)
+    if case .floating = settingsNode.state {
+        // ok
+    } else {
+        #expect(Bool(false), "Expected System Settings to be floating")
+    }
+}
+
 // MARK: - Frame readback and retry
 
 @Test func constrainedWindowGetsCentered() async throws {

@@ -56,9 +56,10 @@ public func parseConfig(_ toml: String) throws -> EngineConfig {
             if let ruleTable = item.table {
                 let matchApp = ruleTable["match-app-name"]?.string
                 let matchTitle = ruleTable["match-title"]?.string
+                let exact = ruleTable["exact"]?.bool ?? false
                 let run = ruleTable["run"]?.string ?? ""
                 windowRules.append(WindowRule(
-                    matchAppName: matchApp, matchTitle: matchTitle, command: run
+                    matchAppName: matchApp, matchTitle: matchTitle, exact: exact, command: run
                 ))
             }
         }

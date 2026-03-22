@@ -27,11 +27,13 @@ public struct EngineConfig: Sendable, Equatable {
 public struct WindowRule: Sendable, Equatable {
     public let matchAppName: String?
     public let matchTitle: String?
+    public let exact: Bool
     public let command: String
 
-    public init(matchAppName: String? = nil, matchTitle: String? = nil, command: String) {
+    public init(matchAppName: String? = nil, matchTitle: String? = nil, exact: Bool = false, command: String) {
         self.matchAppName = matchAppName
         self.matchTitle = matchTitle
+        self.exact = exact
         self.command = command
     }
 }
