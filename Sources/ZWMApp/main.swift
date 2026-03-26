@@ -78,6 +78,20 @@ if hotkeyManager.start() {
     }
 }
 
+// Focus follows mouse — optional passive mouse tracker
+var mouseTracker: MouseTracker? = nil
+if config.focusFollowsMouse {
+    let tracker = MouseTracker { point in
+        Task { await engine.focusWindowAtPoint(point) }
+    }
+    if tracker.start() {
+        mouseTracker = tracker
+        print("zwm: focus-follows-mouse active")
+    } else {
+        fputs("zwm: failed to create mouse event tap for focus-follows-mouse\n", stderr)
+    }
+}
+
 // Watch config files for hot reload
 let configPaths = [
     NSString("~/.zwm.toml").expandingTildeInPath,

@@ -472,6 +472,26 @@ public final class ServerEngine: @unchecked Sendable {
         }
     }
 
+    /// Focus the managed window whose layout frame contains the given point.
+    /// No-ops if the point is already over the focused window.
+    /// `point` must be in Quartz global screen coordinates (top-left origin, Y down),
+    /// which matches CGEvent.location and AX position attributes.
+    public func focusWindowAtPoint(_ point: CGPoint) async {
+        let windowId: UInt32? = withLock {
+            for (nodeId, frame) in lastLayout.frames {
+                guard frame.contains(point),
+                      let win = tree.windowNode(nodeId),
+                      tree.focusedWindowId != nodeId else { continue }
+                tree = tree.setFocus(nodeId)
+                return win.windowId
+            }
+            return nil
+        }
+        if let windowId {
+            try? await backend.focus(windowId)
+        }
+    }
+
     private func focusedMacWindowId(_ tree: TreeState) -> UInt32? {
         guard let focusedNodeId = tree.focusedWindowId,
               let win = tree.windowNode(focusedNodeId) else { return nil }

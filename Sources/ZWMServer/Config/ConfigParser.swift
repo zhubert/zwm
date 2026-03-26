@@ -49,6 +49,11 @@ public func parseConfig(_ toml: String) throws -> EngineConfig {
         config.maxTilingWindows = maxTiling
     }
 
+    // focus-follows-mouse = true
+    if let ffm = table["focus-follows-mouse"]?.bool {
+        config.focusFollowsMouse = ffm
+    }
+
     // [[on-window-detected]]
     if let rules = table["on-window-detected"]?.array {
         var windowRules: [WindowRule] = []
