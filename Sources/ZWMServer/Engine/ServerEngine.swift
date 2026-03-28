@@ -32,15 +32,9 @@ public final class ServerEngine: @unchecked Sendable {
 
     public var currentTree: TreeState { withLock { tree } }
     public var currentLayout: LayoutResult { withLock { lastLayout } }
-    public var currentConfig: EngineConfig { withLock { _config } }
 
     func setTree(_ newTree: TreeState) {
         withLock { tree = newTree }
-    }
-
-    /// Update the engine configuration (e.g. after config reload).
-    public func setConfig(_ newConfig: EngineConfig) {
-        withLock { _config = newConfig }
     }
 
     // MARK: - Startup
@@ -288,7 +282,6 @@ public final class ServerEngine: @unchecked Sendable {
         case "debug-tree": return debugTreeCommand()
         case "close": return closeCommand()
         case "fullscreen": return fullscreenCommand()
-        case "reload-config": return reloadConfigCommand()
         default:
             return CommandResponse(exitCode: 1, stdout: "", stderr: "Unknown command: \(request.command)\n")
         }

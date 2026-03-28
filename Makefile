@@ -19,10 +19,6 @@ reset-accessibility:
 install: release reset-accessibility
 	cp -r .release/ZWM.app /Applications/
 	sudo cp .release/zwm /usr/local/bin/
-	@if [ ! -f ~/.zwm.toml ] && [ ! -f ~/.config/zwm/zwm.toml ]; then \
-		cp resources/default-config.toml ~/.zwm.toml; \
-		echo "Installed default config to ~/.zwm.toml"; \
-	fi
 	@echo "Installed."
 
 restart: install
@@ -32,7 +28,7 @@ restart: install
 uninstall:
 	rm -rf /Applications/ZWM.app
 	sudo rm -f /usr/local/bin/zwm
-	@echo "Uninstalled. Config files (~/.zwm.toml) left in place."
+	@echo "Uninstalled."
 
 clean:
 	swift package clean

@@ -25,13 +25,9 @@ if FileManager.default.createFile(atPath: logPath, contents: nil),
     setvbuf(stdout, nil, _IONBF, 0)
 }
 
-// Load configuration
-let config = loadConfigFromFile()
-print("zwm: loaded config (\(config.workspaceNames.count) workspaces)")
-
 // Use real AX backend
 let backend = AXBackend()
-let engine = ServerEngine(backend: backend, config: config)
+let engine = ServerEngine(backend: backend)
 
 // Start the engine (discovers windows, sets up observers)
 Task {
@@ -54,31 +50,7 @@ Task {
     }
 }
 
-// Set up global keybindings
-let hotkeyManager = HotkeyManager { command in
-    let parts = command.split(separator: " ", maxSplits: 1).map(String.init)
-    let cmd = parts.first ?? ""
-    let args = parts.count > 1 ? parts[1].split(separator: " ").map(String.init) : []
-    let request = CommandRequest(command: cmd, args: args)
-    Task {
-        _ = await engine.execute(request)
-    }
-}
-hotkeyManager.loadBindings(config.keybindings)
-if hotkeyManager.start() {
-    print("zwm: keybindings active (mode: main)")
-} else {
-    fputs("zwm: failed to create event tap — is Accessibility enabled?\n", stderr)
-    MainActor.assumeIsolated {
-        showAlert(
-            title: "zwm Accessibility Error",
-            message: "Failed to create event tap. Please enable Accessibility permissions for zwm in System Settings → Privacy & Security → Accessibility, then relaunch zwm."
-        )
-        NSApplication.shared.terminate(nil)
-    }
-}
-
-// Focus follows mouse — optional passive mouse tracker
+// Focus follows mouse — passive mouse tracker
 var mouseTracker: MouseTracker? = nil
 
 @MainActor func applyMouseTracker(enabled: Bool) {
@@ -99,22 +71,7 @@ var mouseTracker: MouseTracker? = nil
     }
 }
 
-applyMouseTracker(enabled: config.focusFollowsMouse)
-
-// Watch config files for hot reload
-let configPaths = [
-    NSString("~/.zwm.toml").expandingTildeInPath,
-    NSString("~/.config/zwm/zwm.toml").expandingTildeInPath,
-]
-let _watcher = FileWatcher(paths: configPaths) {
-    let newConfig = loadConfigFromFile(previous: engine.currentConfig)
-    engine.setConfig(newConfig)
-    hotkeyManager.loadBindings(newConfig.keybindings)
-    DispatchQueue.main.async {
-        applyMouseTracker(enabled: newConfig.focusFollowsMouse)
-    }
-    print("zwm: config reloaded")
-}
+applyMouseTracker(enabled: true)
 
 // Start socket server on a GCD background queue
 let socketPath = ZWMSocket.defaultPath
@@ -130,7 +87,6 @@ DispatchQueue.global(qos: .userInitiated).async {
 
 // Run the main run loop — this is what drives:
 // - AX observer callbacks (per-app window events)
-// - CGEvent tap (global keybindings)
 // - NSWorkspace notification delivery
 // - MainActor.run blocks from async Tasks
 print("zwm: server running (pid \(getpid()))")

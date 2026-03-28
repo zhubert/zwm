@@ -23,12 +23,12 @@ make install                              # Release build + install to /Applicat
 - **Event queue** — all inputs (AX, NSWorkspace, mouse, CLI) flow through a coalescing `EventQueue` actor.
 - **WindowBackend protocol** — abstracts macOS AX calls. `AXBackend` is the real implementation; `MockBackend` is used in tests.
 - **Client-server** — `zwm` CLI sends JSON `CommandRequest` over UNIX socket, server returns `CommandResponse`.
-- **MouseTracker** — passive `CGEvent` tap (`.listenOnly`) in `ZWMApp/main.swift`. Started/stopped via `applyMouseTracker(enabled:)`, called at startup and on every config hot-reload. Controlled by the `focus-follows-mouse` top-level TOML key.
+- **MouseTracker** — passive `CGEvent` tap (`.listenOnly`) in `ZWMApp/main.swift` for focus-follows-mouse.
 
 ## SPM Targets
 
 - **ZWMApp** — server executable entry point
-- **ZWMServer** — core library (tree, layout, diff, events, commands, config, backend, socket)
+- **ZWMServer** — core library (tree, layout, diff, events, commands, backend, socket)
 - **ZWMCli** — CLI executable
 - **ZWMCommon** — shared types (CmdArgs, CommandRequest/Response)
 - **PrivateApi** — C header for `_AXUIElementGetWindow`
@@ -36,8 +36,7 @@ make install                              # Release build + install to /Applicat
 
 ## Key Paths
 
-- **Config** — `~/.zwm.toml` or `~/.config/zwm/zwm.toml` (TOML, hot-reloaded via `FileWatcher`). Top-level keys (`focus-follows-mouse`, `max-tiling-windows`, etc.) must appear **before** any `[section]` header in the file, or TOML will assign them to the preceding section.
-- **Default config** — `resources/default-config.toml`
+- **Config** — all behavior is hardcoded in `EngineConfig.swift` (no config file)
 - **Log** — `/tmp/zwm.log`
 - **Socket** — UNIX domain socket (path from `SocketPath`)
 

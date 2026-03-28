@@ -4,7 +4,6 @@ import CoreGraphics
 public struct EngineConfig: Sendable, Equatable {
     public var gaps: GapConfig
     public var workspaceNames: [String]
-    public var keybindings: [String: [String: String]]  // mode → (key → command)
     public var windowRules: [WindowRule]
     public var maxTilingWindows: Int
     public var focusFollowsMouse: Bool
@@ -12,14 +11,16 @@ public struct EngineConfig: Sendable, Equatable {
     public init(
         gaps: GapConfig = GapConfig(),
         workspaceNames: [String] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
-        keybindings: [String: [String: String]] = [:],
-        windowRules: [WindowRule] = [],
+        windowRules: [WindowRule] = [
+            WindowRule(matchAppName: "Finder", command: "layout floating"),
+            WindowRule(matchTitle: "Preferences", command: "layout floating"),
+            WindowRule(matchTitle: "System Settings", exact: true, command: "layout floating"),
+        ],
         maxTilingWindows: Int = 4,
-        focusFollowsMouse: Bool = false
+        focusFollowsMouse: Bool = true
     ) {
         self.gaps = gaps
         self.workspaceNames = workspaceNames
-        self.keybindings = keybindings
         self.windowRules = windowRules
         self.maxTilingWindows = maxTilingWindows
         self.focusFollowsMouse = focusFollowsMouse

@@ -10,7 +10,6 @@ let package = Package(
         .executable(name: "zwm", targets: ["ZWMCli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/LebJe/TOMLKit.git", from: "0.5.5"),
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
     ],
     targets: [
@@ -23,7 +22,6 @@ let package = Package(
             dependencies: [
                 "ZWMCommon",
                 "PrivateApi",
-                "TOMLKit",
                 .product(name: "OrderedCollections", package: "swift-collections"),
             ]
         ),

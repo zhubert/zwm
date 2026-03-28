@@ -19,11 +19,6 @@ public final class SocketServer: Sendable {
         self.asyncHandler = asyncHandler
     }
 
-    /// Default socket path based on the current user's UID.
-    public static var defaultSocketPath: String {
-        ZWMSocket.defaultPath
-    }
-
     /// Start listening for connections. This blocks the calling thread.
     /// Call from a detached Task or background thread.
     public func start() throws {

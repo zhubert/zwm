@@ -4,19 +4,16 @@ A tiling window manager for macOS, written in Swift.
 
 > **This is personalized software.** ZWM does exactly what I want from a window manager — but it probably won't do what *you* want out of the box. If it looks interesting, fork it and tweak it to fit your workflow!
 
-ZWM automatically arranges your windows into an equal-sized grid layout. It uses vim-style keybindings, supports multiple workspaces, and runs as a lightweight background app with a CLI for control.
+ZWM automatically arranges your windows into an equal-sized grid layout. It supports multiple workspaces and runs as a lightweight background app with a CLI for control.
 
 ## Features
 
 - **Grid tiling** — windows are arranged in an equal-sized grid, oriented horizontally or vertically
-- **Vim-style keybindings** — `alt-h/j/k/l` to focus, `alt-shift-h/j/k/l` to move
-- **Workspaces** — 9 workspaces per monitor, switched with `alt-1` through `alt-9`
-- **Workspace overflow** — when a workspace hits its tiling limit (`max-tiling-windows`), new windows automatically overflow to the next workspace
+- **Workspaces** — 9 workspaces per monitor
+- **Workspace overflow** — when a workspace hits its tiling limit (4 windows), new windows automatically overflow to the next workspace
 - **Auto-float small windows** — windows smaller than 1/8 of the monitor area are automatically floated
-- **Window rules** — auto-float specific apps or window titles
-- **Configurable gaps** — inner and outer gaps between windows
-- **Focus-follows-mouse** — optionally focus windows on hover without clicking
-- **Hot-reload config** — edit your config and changes apply immediately
+- **Window rules** — Finder, Preferences, and System Settings windows are automatically floated
+- **Focus-follows-mouse** — windows are focused on hover without clicking
 - **Multi-monitor support** — each monitor gets its own set of workspaces
 - **CLI control** — `zwm` command to query and control the window manager
 
@@ -53,7 +50,7 @@ cd zwm
 make install
 ```
 
-This builds a release binary, copies `ZWM.app` to `/Applications/`, and installs the `zwm` CLI to `/usr/local/bin/`. A default config is placed at `~/.zwm.toml` if one doesn't already exist.
+This builds a release binary, copies `ZWM.app` to `/Applications/`, and installs the `zwm` CLI to `/usr/local/bin/`.
 
 ## Uninstall
 
@@ -67,67 +64,20 @@ Or if built from source:
 make uninstall
 ```
 
-Config files are left in place.
-
-## Configuration
-
-ZWM reads config from `~/.zwm.toml` or `~/.config/zwm/zwm.toml`. Changes are picked up automatically.
-
-```toml
-# Maximum tiling windows per workspace before overflowing to the next
-max-tiling-windows = 4
-
-# Focus windows on hover without clicking (default: false)
-focus-follows-mouse = false
-
-[gaps]
-inner = 0
-outer = 0
-
-[keybindings.main]
-# Focus
-alt-h = "focus left"
-alt-j = "focus down"
-alt-k = "focus up"
-alt-l = "focus right"
-
-# Move
-alt-shift-h = "move left"
-alt-shift-j = "move down"
-alt-shift-k = "move up"
-alt-shift-l = "move right"
-
-# Layout
-alt-enter = "layout horizontal"
-alt-v = "layout vertical"
-alt-f = "fullscreen"
-
-# Workspaces
-alt-1 = "workspace 1"
-alt-shift-1 = "move-to-workspace 1"
-# ... alt-2 through alt-9
-
-# Close window
-alt-shift-q = "close"
-
-# Reload config
-alt-shift-r = "reload-config"
-
-# Window rules — float specific apps or titles
-[[on-window-detected]]
-match-app-name = "Finder"
-run = "layout floating"
-
-[[on-window-detected]]
-match-title = "Settings"
-run = "layout floating"
-```
-
-See `resources/default-config.toml` for the full default configuration.
-
 ## CLI
 
 The `zwm` CLI communicates with the running server over a UNIX socket. Run `zwm --help` for available commands.
+
+Examples:
+
+```sh
+zwm focus left
+zwm workspace 3
+zwm move-to-workspace 2
+zwm layout floating
+zwm list-windows
+zwm debug-tree
+```
 
 ## Architecture
 
@@ -136,6 +86,8 @@ ZWM is built around an **immutable tree model**. The window tree is a value type
 All inputs (Accessibility events, workspace notifications, mouse events, CLI commands) flow through a coalescing event queue. macOS Accessibility calls are abstracted behind a `WindowBackend` protocol, which is swapped for a `MockBackend` in tests.
 
 The server (`zwm-server`) runs as a background macOS app. The CLI (`zwm`) sends JSON commands over a UNIX socket and prints the response.
+
+All behavior is hardcoded — there is no configuration file. To change settings, edit `EngineConfig.swift` and rebuild.
 
 ## Development
 
@@ -147,7 +99,7 @@ swift test --filter Foo     # Run specific tests
 
 ## Acknowledgments
 
-ZWM is heavily inspired by [AeroSpace](https://github.com/nikitabobko/AeroSpace), an excellent tiling window manager for macOS. Many of the core ideas — tree-based tiling, vim-style keybindings, and the overall user experience — owe a debt to AeroSpace's design.
+ZWM is heavily inspired by [AeroSpace](https://github.com/nikitabobko/AeroSpace), an excellent tiling window manager for macOS. Many of the core ideas — tree-based tiling and the overall user experience — owe a debt to AeroSpace's design.
 
 ## License
 

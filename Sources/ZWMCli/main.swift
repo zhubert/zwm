@@ -60,7 +60,6 @@ func printUsage() {
       close                  Close focused window
       fullscreen             Toggle fullscreen
       debug-tree             Dump tree structure for debugging
-      reload-config          Reload configuration
 
     Options:
       -h, --help             Show this help
