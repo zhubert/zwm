@@ -4,6 +4,9 @@
 # Maximum tiling windows per workspace before overflowing to the next
 max-tiling-windows = 4
 
+# Focus windows on hover without clicking (default: false)
+focus-follows-mouse = false
+
 [gaps]
 inner = 0
 outer = 0

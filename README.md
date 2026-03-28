@@ -15,6 +15,7 @@ ZWM automatically arranges your windows into an equal-sized grid layout. It uses
 - **Auto-float small windows** — windows smaller than 1/8 of the monitor area are automatically floated
 - **Window rules** — auto-float specific apps or window titles
 - **Configurable gaps** — inner and outer gaps between windows
+- **Focus-follows-mouse** — optionally focus windows on hover without clicking
 - **Hot-reload config** — edit your config and changes apply immediately
 - **Multi-monitor support** — each monitor gets its own set of workspaces
 - **CLI control** — `zwm` command to query and control the window manager
@@ -75,6 +76,9 @@ ZWM reads config from `~/.zwm.toml` or `~/.config/zwm/zwm.toml`. Changes are pic
 ```toml
 # Maximum tiling windows per workspace before overflowing to the next
 max-tiling-windows = 4
+
+# Focus windows on hover without clicking (default: false)
+focus-follows-mouse = false
 
 [gaps]
 inner = 0

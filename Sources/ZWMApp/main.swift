@@ -80,17 +80,26 @@ if hotkeyManager.start() {
 
 // Focus follows mouse — optional passive mouse tracker
 var mouseTracker: MouseTracker? = nil
-if config.focusFollowsMouse {
-    let tracker = MouseTracker { point in
-        Task { await engine.focusWindowAtPoint(point) }
-    }
-    if tracker.start() {
-        mouseTracker = tracker
-        print("zwm: focus-follows-mouse active")
-    } else {
-        fputs("zwm: failed to create mouse event tap for focus-follows-mouse\n", stderr)
+
+@MainActor func applyMouseTracker(enabled: Bool) {
+    if enabled, mouseTracker == nil {
+        let tracker = MouseTracker { point in
+            Task { await engine.focusWindowAtPoint(point) }
+        }
+        if tracker.start() {
+            mouseTracker = tracker
+            print("zwm: focus-follows-mouse active")
+        } else {
+            fputs("zwm: failed to create mouse event tap for focus-follows-mouse\n", stderr)
+        }
+    } else if !enabled, mouseTracker != nil {
+        mouseTracker?.stop()
+        mouseTracker = nil
+        print("zwm: focus-follows-mouse disabled")
     }
 }
+
+applyMouseTracker(enabled: config.focusFollowsMouse)
 
 // Watch config files for hot reload
 let configPaths = [
@@ -101,6 +110,9 @@ let _watcher = FileWatcher(paths: configPaths) {
     let newConfig = loadConfigFromFile(previous: engine.currentConfig)
     engine.setConfig(newConfig)
     hotkeyManager.loadBindings(newConfig.keybindings)
+    DispatchQueue.main.async {
+        applyMouseTracker(enabled: newConfig.focusFollowsMouse)
+    }
     print("zwm: config reloaded")
 }
 
