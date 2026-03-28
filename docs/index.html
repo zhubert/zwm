@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZWM — Tiling Window Manager for macOS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --bg2:       #161b22;
+      --border:    #30363d;
+      --text:      #c9d1d9;
+      --muted:     #8b949e;
+      --accent:    #58a6ff;
+      --green:     #3fb950;
+      --yellow:    #d29922;
+      --code-bg:   #1e2530;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ── */
+    .page {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 64px 0 48px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -1px;
+      color: #fff;
+    }
+
+    .tagline {
+      margin-top: 10px;
+      font-size: 1rem;
+      color: var(--muted);
+    }
+
+    .note {
+      margin-top: 20px;
+      padding: 12px 16px;
+      background: var(--bg2);
+      border-left: 3px solid var(--yellow);
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+
+    .features {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 24px;
+    }
+
+    .feature {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .feature::before {
+      content: "+ ";
+      color: var(--green);
+    }
+
+    /* ── Nav ── */
+    nav {
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    nav a {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    nav a:hover { color: var(--accent); text-decoration: none; }
+
+    /* ── Sections ── */
+    section {
+      padding: 48px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section:last-of-type { border-bottom: none; }
+
+    h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 20px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    h3 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin: 28px 0 10px;
+    }
+
+    h3:first-child { margin-top: 0; }
+
+    p {
+      color: var(--muted);
+      margin-bottom: 14px;
+      font-size: 0.9rem;
+    }
+
+    p:last-child { margin-bottom: 0; }
+
+    /* ── Code blocks ── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin: 14px 0;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: inherit;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+
+    /* inline code */
+    p code, li code, td code {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 0.82rem;
+    }
+
+    /* syntax hints */
+    .cm  { color: var(--muted); }       /* comment */
+    .kw  { color: #ff7b72; }            /* keyword / section header */
+    .st  { color: #a5d6ff; }            /* string */
+    .nm  { color: var(--green); }       /* number / bool */
+    .key { color: var(--accent); }      /* key */
+
+    /* ── Table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-top: 6px;
+    }
+
+    thead th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 6px 12px 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody td {
+      padding: 7px 12px 7px 0;
+      border-bottom: 1px solid #21262d;
+      color: var(--muted);
+      vertical-align: top;
+    }
+
+    tbody td:first-child { color: var(--text); }
+    tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Footer ── */
+    footer {
+      padding: 32px 0 48px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--accent); }
+
+    @media (max-width: 560px) {
+      .features { grid-template-columns: 1fr; }
+      .logo { font-size: 1.8rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">zwm</div>
+    <div class="tagline">A tiling window manager for macOS, written in Swift.</div>
+
+    <div class="note">
+      <strong>This is personalized software.</strong> ZWM does exactly what I want from a window
+      manager — but it probably won&rsquo;t do what <em>you</em> want out of the box. If it looks
+      interesting, fork it and tweak it to fit your workflow!
+    </div>
+
+    <div class="features">
+      <div class="feature">Grid tiling, horizontal &amp; vertical</div>
+      <div class="feature">Vim-style keybindings</div>
+      <div class="feature">9 workspaces per monitor</div>
+      <div class="feature">Workspace overflow</div>
+      <div class="feature">Auto-float small windows</div>
+      <div class="feature">Window rules</div>
+      <div class="feature">Configurable gaps</div>
+      <div class="feature">Focus-follows-mouse</div>
+      <div class="feature">Hot-reload config</div>
+      <div class="feature">Multi-monitor support</div>
+      <div class="feature">CLI control</div>
+    </div>
+  </header>
+
+  <!-- ── Nav ── -->
+  <nav>
+    <a href="#install">Install</a>
+    <a href="#config">Configuration</a>
+    <a href="#keybindings">Keybindings</a>
+    <a href="#cli">CLI</a>
+    <a href="https://github.com/zhubert/zwm">GitHub</a>
+  </nav>
+
+  <!-- ── Requirements ── -->
+  <section>
+    <h2>Requirements</h2>
+    <p>macOS 14 (Sonoma) or later.</p>
+    <p>Accessibility permission must be granted:
+      <strong style="color:var(--text);">System Settings &rsaquo; Privacy &amp; Security &rsaquo; Accessibility</strong>
+    </p>
+  </section>
+
+  <!-- ── Install ── -->
+  <section id="install">
+    <h2>Install</h2>
+
+    <h3>Homebrew</h3>
+    <pre><code>brew install zhubert/tap/zwm</code></pre>
+
+    <p>Start ZWM as a background service:</p>
+    <pre><code>brew services start zwm</code></pre>
+
+    <p>Grant Accessibility permission when prompted, then ZWM will start tiling your windows.</p>
+
+    <p>To stop:</p>
+    <pre><code>brew services stop zwm</code></pre>
+
+    <p>To uninstall:</p>
+    <pre><code>brew uninstall zwm</code></pre>
+
+    <h3>Build from source</h3>
+    <pre><code>git clone https://github.com/zhubert/zwm.git
+cd zwm
+make install</code></pre>
+
+    <p>This builds a release binary, copies <code>ZWM.app</code> to <code>/Applications/</code>,
+    and installs the <code>zwm</code> CLI to <code>/usr/local/bin/</code>. A default config is
+    placed at <code>~/.zwm.toml</code> if one doesn&rsquo;t already exist.</p>
+
+    <p>To uninstall a source build:</p>
+    <pre><code>make uninstall</code></pre>
+  </section>
+
+  <!-- ── Configuration ── -->
+  <section id="config">
+    <h2>Configuration</h2>
+
+    <p>ZWM reads config from <code>~/.zwm.toml</code> or <code>~/.config/zwm/zwm.toml</code>.
+    Changes are picked up automatically — no restart required.</p>
+
+    <p>Top-level keys (like <code>focus-follows-mouse</code> and <code>max-tiling-windows</code>)
+    must appear <strong style="color:var(--text)">before</strong> any <code>[section]</code>
+    header in the file.</p>
+
+    <pre><code><span class="cm"># Maximum tiling windows per workspace before overflowing to the next</span>
+<span class="key">max-tiling-windows</span> = <span class="nm">4</span>
+
+<span class="cm"># Focus windows on hover without clicking (default: false)</span>
+<span class="key">focus-follows-mouse</span> = <span class="nm">false</span>
+
+<span class="kw">[gaps]</span>
+<span class="key">inner</span> = <span class="nm">0</span>
+<span class="key">outer</span> = <span class="nm">0</span>
+
+<span class="kw">[keybindings.main]</span>
+<span class="cm"># Focus</span>
+<span class="key">alt-h</span> = <span class="st">"focus left"</span>
+<span class="key">alt-j</span> = <span class="st">"focus down"</span>
+<span class="key">alt-k</span> = <span class="st">"focus up"</span>
+<span class="key">alt-l</span> = <span class="st">"focus right"</span>
+
+<span class="cm"># Move</span>
+<span class="key">alt-shift-h</span> = <span class="st">"move left"</span>
+<span class="key">alt-shift-j</span> = <span class="st">"move down"</span>
+<span class="key">alt-shift-k</span> = <span class="st">"move up"</span>
+<span class="key">alt-shift-l</span> = <span class="st">"move right"</span>
+
+<span class="cm"># Layout</span>
+<span class="key">alt-enter</span> = <span class="st">"layout horizontal"</span>
+<span class="key">alt-v</span>     = <span class="st">"layout vertical"</span>
+<span class="key">alt-f</span>     = <span class="st">"fullscreen"</span>
+
+<span class="cm"># Workspaces</span>
+<span class="key">alt-1</span>       = <span class="st">"workspace 1"</span>
+<span class="key">alt-shift-1</span> = <span class="st">"move-to-workspace 1"</span>
+<span class="cm"># ... alt-2 through alt-9</span>
+
+<span class="cm"># Close window</span>
+<span class="key">alt-shift-q</span> = <span class="st">"close"</span>
+
+<span class="cm"># Reload config</span>
+<span class="key">alt-shift-r</span> = <span class="st">"reload-config"</span>
+
+<span class="cm"># Window rules — float specific apps or titles</span>
+<span class="kw">[[on-window-detected]]</span>
+<span class="key">match-app-name</span> = <span class="st">"Finder"</span>
+<span class="key">run</span>            = <span class="st">"layout floating"</span>
+
+<span class="kw">[[on-window-detected]]</span>
+<span class="key">match-title</span> = <span class="st">"Settings"</span>
+<span class="key">run</span>         = <span class="st">"layout floating"</span></code></pre>
+
+    <p>See <a href="https://github.com/zhubert/zwm/blob/main/resources/default-config.toml"><code>resources/default-config.toml</code></a>
+    in the repository for the full default configuration.</p>
+  </section>
+
+  <!-- ── Keybindings ── -->
+  <section id="keybindings">
+    <h2>Keybindings</h2>
+
+    <p>Default bindings — all use the <code>alt</code> modifier. Override any of these in your
+    config under <code>[keybindings.main]</code>.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>alt-h/j/k/l</code></td><td>Focus window left / down / up / right</td></tr>
+        <tr><td><code>alt-shift-h/j/k/l</code></td><td>Move window left / down / up / right</td></tr>
+        <tr><td><code>alt-enter</code></td><td>Switch to horizontal layout</td></tr>
+        <tr><td><code>alt-v</code></td><td>Switch to vertical layout</td></tr>
+        <tr><td><code>alt-f</code></td><td>Toggle fullscreen</td></tr>
+        <tr><td><code>alt-1</code> &ndash; <code>alt-9</code></td><td>Switch to workspace 1&ndash;9</td></tr>
+        <tr><td><code>alt-shift-1</code> &ndash; <code>alt-shift-9</code></td><td>Move focused window to workspace 1&ndash;9</td></tr>
+        <tr><td><code>alt-shift-q</code></td><td>Close focused window</td></tr>
+        <tr><td><code>alt-shift-r</code></td><td>Reload config</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── CLI ── -->
+  <section id="cli">
+    <h2>CLI</h2>
+
+    <p>The <code>zwm</code> CLI communicates with the running server over a UNIX socket. It can
+    query state and send any command that a keybinding can trigger.</p>
+
+    <pre><code>zwm --help          # list available commands</code></pre>
+
+    <p>Examples:</p>
+    <pre><code>zwm focus left
+zwm workspace 3
+zwm move-to-workspace 2
+zwm layout floating
+zwm reload-config</code></pre>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer>
+    <p>
+      ZWM is MIT licensed. Inspired by
+      <a href="https://github.com/nikitabobko/AeroSpace">AeroSpace</a>.
+      &mdash;
+      <a href="https://github.com/zhubert/zwm">github.com/zhubert/zwm</a>
+    </p>
+  </footer>
+
+</div>
+</body>
+</html>
