@@ -53,16 +53,11 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
         lock.withLock { state.closeCalls }
     }
 
-    public var minimizeCalls: [(windowId: UInt32, minimized: Bool)] {
-        lock.withLock { state.minimizeCalls }
-    }
-
     public func resetRecordedCalls() {
         lock.withLock {
             state.setFrameCalls = []
             state.focusCalls = []
             state.closeCalls = []
-            state.minimizeCalls = []
         }
     }
 
@@ -98,10 +93,6 @@ public final class MockBackend: WindowBackend, @unchecked Sendable {
         lock.withLock { state.closeCalls.append(windowId) }
     }
 
-    public func setMinimized(_ windowId: UInt32, _ minimized: Bool) async throws {
-        lock.withLock { state.minimizeCalls.append((windowId: windowId, minimized: minimized)) }
-    }
-
     public func monitors() async -> [MonitorInfo] {
         lock.withLock { state.monitors }
     }
@@ -122,7 +113,6 @@ private struct MockState {
     var setFrameCalls: [(windowId: UInt32, frame: CGRect)] = []
     var focusCalls: [UInt32] = []
     var closeCalls: [UInt32] = []
-    var minimizeCalls: [(windowId: UInt32, minimized: Bool)] = []
     var frameOverrides: [UInt32: CGRect] = [:]
 }
 

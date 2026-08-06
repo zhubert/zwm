@@ -5,7 +5,6 @@ import Foundation
 /// Uses `.listenOnly` so mouse events are never consumed.
 public final class MouseTracker: @unchecked Sendable {
     private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
     private let handler: @Sendable (CGPoint) -> Void
 
     public init(handler: @escaping @Sendable (CGPoint) -> Void) {
@@ -33,21 +32,8 @@ public final class MouseTracker: @unchecked Sendable {
         }
         eventTap = tap
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
-        runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         return true
-    }
-
-    /// Stop observing mouse movement.
-    public func stop() {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-        }
-        eventTap = nil
-        runLoopSource = nil
     }
 }

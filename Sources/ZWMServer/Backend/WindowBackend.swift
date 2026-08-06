@@ -19,9 +19,6 @@ public protocol WindowBackend: Sendable {
     /// Close a window.
     func close(_ windowId: UInt32) async throws
 
-    /// Minimize or unminimize a window.
-    func setMinimized(_ windowId: UInt32, _ minimized: Bool) async throws
-
     /// Get current monitor info.
     func monitors() async -> [MonitorInfo]
 
@@ -41,7 +38,6 @@ public struct DiscoveredWindow: Sendable, Equatable {
     public let title: String
     public let frame: CGRect
     public let isMinimized: Bool
-    public let isFullscreen: Bool
     public let windowLevel: Int
     public let subrole: String
     public let hasCloseButton: Bool
@@ -65,7 +61,6 @@ public struct DiscoveredWindow: Sendable, Equatable {
         title: String,
         frame: CGRect,
         isMinimized: Bool = false,
-        isFullscreen: Bool = false,
         windowLevel: Int = 0,
         subrole: String = "",
         hasCloseButton: Bool = true
@@ -76,7 +71,6 @@ public struct DiscoveredWindow: Sendable, Equatable {
         self.title = title
         self.frame = frame
         self.isMinimized = isMinimized
-        self.isFullscreen = isFullscreen
         self.windowLevel = windowLevel
         self.subrole = subrole
         self.hasCloseButton = hasCloseButton

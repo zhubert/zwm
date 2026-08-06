@@ -6,7 +6,6 @@ public struct EngineConfig: Sendable, Equatable {
     public var workspaceNames: [String]
     public var windowRules: [WindowRule]
     public var maxTilingWindows: Int
-    public var focusFollowsMouse: Bool
 
     public init(
         gaps: GapConfig = GapConfig(),
@@ -16,14 +15,12 @@ public struct EngineConfig: Sendable, Equatable {
             WindowRule(matchTitle: "Preferences", command: "layout floating"),
             WindowRule(matchTitle: "System Settings", exact: true, command: "layout floating"),
         ],
-        maxTilingWindows: Int = 4,
-        focusFollowsMouse: Bool = true
+        maxTilingWindows: Int = 4
     ) {
         self.gaps = gaps
         self.workspaceNames = workspaceNames
         self.windowRules = windowRules
         self.maxTilingWindows = maxTilingWindows
-        self.focusFollowsMouse = focusFollowsMouse
     }
 }
 

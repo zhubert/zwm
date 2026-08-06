@@ -59,27 +59,14 @@ Task {
 }
 
 // Focus follows mouse — passive mouse tracker
-var mouseTracker: MouseTracker? = nil
-
-@MainActor func applyMouseTracker(enabled: Bool) {
-    if enabled, mouseTracker == nil {
-        let tracker = MouseTracker { point in
-            Task { await engine.focusWindowAtPoint(point) }
-        }
-        if tracker.start() {
-            mouseTracker = tracker
-            print("zwm: focus-follows-mouse active")
-        } else {
-            fputs("zwm: failed to create mouse event tap for focus-follows-mouse\n", stderr)
-        }
-    } else if !enabled, mouseTracker != nil {
-        mouseTracker?.stop()
-        mouseTracker = nil
-        print("zwm: focus-follows-mouse disabled")
-    }
+let mouseTracker = MouseTracker { point in
+    Task { await engine.focusWindowAtPoint(point) }
 }
-
-applyMouseTracker(enabled: true)
+if mouseTracker.start() {
+    print("zwm: focus-follows-mouse active")
+} else {
+    fputs("zwm: failed to create mouse event tap for focus-follows-mouse\n", stderr)
+}
 
 // Start socket server on a GCD background queue
 let socketPath = ZWMSocket.defaultPath

@@ -43,29 +43,16 @@ import Testing
     #expect(backend.closeCalls == [5])
 }
 
-@Test func mockBackendRecordsMinimize() async throws {
-    let backend = MockBackend()
-    try await backend.setMinimized(3, true)
-    try await backend.setMinimized(3, false)
-
-    let calls = backend.minimizeCalls
-    #expect(calls.count == 2)
-    #expect(calls[0].minimized == true)
-    #expect(calls[1].minimized == false)
-}
-
 @Test func mockBackendResetClearsCalls() async throws {
     let backend = MockBackend()
     try await backend.setFrame(1, CGRect(x: 0, y: 0, width: 100, height: 100))
     try await backend.focus(1)
     try await backend.close(2)
-    try await backend.setMinimized(3, true)
 
     backend.resetRecordedCalls()
     #expect(backend.setFrameCalls.isEmpty)
     #expect(backend.focusCalls.isEmpty)
     #expect(backend.closeCalls.isEmpty)
-    #expect(backend.minimizeCalls.isEmpty)
 }
 
 /// Thread-safe event collector for tests.

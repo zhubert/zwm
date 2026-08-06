@@ -64,7 +64,6 @@ extension AXBackend: WindowBackend {
 
                 let frame = axFrame(windowElement)
                 let isMinimized = axBoolAttribute(windowElement, kAXMinimizedAttribute as CFString)
-                let isFullscreen = axBoolAttribute(windowElement, "AXFullScreen" as CFString)
                 let title = axStringAttribute(windowElement, kAXTitleAttribute) ?? ""
                 let level = windowLevel(for: windowId)
                 let subrole = axStringAttribute(windowElement, kAXSubroleAttribute) ?? ""
@@ -73,7 +72,7 @@ extension AXBackend: WindowBackend {
                 print("zwm: discoverWindows:   wid=\(windowId) level=\(level) minimized=\(isMinimized) subrole=\(subrole) closeBtn=\(hasCloseButton) title=\"\(title)\"")
                 windows.append(DiscoveredWindow(
                     windowId: windowId, pid: app.pid, appName: app.name, title: title,
-                    frame: frame, isMinimized: isMinimized, isFullscreen: isFullscreen,
+                    frame: frame, isMinimized: isMinimized,
                     windowLevel: level, subrole: subrole, hasCloseButton: hasCloseButton
                 ))
             }
@@ -153,16 +152,6 @@ extension AXBackend: WindowBackend {
         if let button = closeButton {
             AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
         }
-    }
-
-    public func setMinimized(_ windowId: UInt32, _ minimized: Bool) async throws {
-        guard let element = await findWindowElement(windowId) else {
-            throw AXBackendError.windowNotFound(windowId)
-        }
-        AXUIElementSetAttributeValue(
-            element, kAXMinimizedAttribute as CFString,
-            minimized ? kCFBooleanTrue : kCFBooleanFalse
-        )
     }
 
     public func monitors() async -> [MonitorInfo] {
@@ -509,6 +498,5 @@ extension AXBackend: WindowBackend {
 
 public enum AXBackendError: Error, Sendable {
     case windowNotFound(UInt32)
-    case accessibilityNotEnabled
     case setFrameFailed(windowId: UInt32, code: Int32)
 }

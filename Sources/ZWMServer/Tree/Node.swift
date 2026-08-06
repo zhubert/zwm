@@ -13,7 +13,6 @@ public enum WindowState: Sendable, Equatable {
     case tiling
     case floating(CGRect)
     case fullscreen
-    case minimized
 }
 
 // MARK: - Node types
