@@ -22,14 +22,11 @@ public func layoutTree(
             continue
         }
 
-        // Handle fullscreen window: give it the full visible frame, skip tiling for remaining
-        let fullscreenId = ws.childIds.first { id in
-            if case .window(let w) = tree.node(id), w.state == .fullscreen { return true }
-            return false
-        }
-        if let fsId = fullscreenId {
+        // Handle fullscreen window (may be nested inside a container):
+        // give it the full visible frame, remaining tiling windows still get
+        // laid out behind it.
+        if let fsId = firstFullscreenWindow(ws.childIds, tree: tree) {
             frames[fsId] = monitor.visibleFrame
-            // Remaining tiling windows still get laid out behind the fullscreen window
         }
 
         // Compute usable area after outer gaps
@@ -40,9 +37,9 @@ public func layoutTree(
             height: monitor.visibleFrame.height - 2 * gaps.outer
         )
 
-        // Layout tiling children (excluding fullscreen) — flatten BSP tree into grid
-        let tilingChildIds = fullscreenId != nil ? ws.childIds.filter { $0 != fullscreenId } : ws.childIds
-        let leaves = collectTilingLeaves(tilingChildIds, tree: tree)
+        // Layout tiling children — flatten BSP tree into grid.
+        // Fullscreen windows are excluded automatically (state != .tiling).
+        let leaves = collectTilingLeaves(ws.childIds, tree: tree)
         layoutGrid(leaves, in: usable, direction: ws.layout, gaps: gaps, frames: &frames)
 
         // Floating windows keep their stored frame
@@ -54,6 +51,21 @@ public func layoutTree(
     }
 
     return LayoutResult(frames: frames)
+}
+
+/// Find the first fullscreen window anywhere in a subtree (depth-first).
+private func firstFullscreenWindow(_ childIds: some Sequence<NodeId>, tree: TreeState) -> NodeId? {
+    for id in childIds {
+        switch tree.node(id) {
+        case .window(let w) where w.state == .fullscreen:
+            return id
+        case .tilingContainer(let tc):
+            if let found = firstFullscreenWindow(tc.childIds, tree: tree) { return found }
+        default:
+            break
+        }
+    }
+    return nil
 }
 
 /// Collect all tiling leaf window IDs by flattening containers depth-first.

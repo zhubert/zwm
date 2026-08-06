@@ -55,6 +55,9 @@ public final class SocketServer: Sendable {
             throw SocketError.bindFailed(errno: errno)
         }
 
+        // Only the owning user may send commands
+        chmod(socketPath, 0o600)
+
         guard listen(fd, 5) == 0 else {
             close(fd)
             throw SocketError.listenFailed(errno: errno)
@@ -106,12 +109,15 @@ public final class SocketServer: Sendable {
         var buffer = Data()
         let chunk = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
         defer { chunk.deallocate() }
+        // The client shuts down its write side when done, so read until EOF.
+        // A short read does not mean the request is complete.
         while true {
             let n = read(fd, chunk, 4096)
             if n > 0 {
                 buffer.append(chunk, count: n)
+            } else if n == 0 || errno != EINTR {
+                break
             }
-            if n < 4096 { break }
         }
         return buffer.isEmpty ? nil : buffer
     }

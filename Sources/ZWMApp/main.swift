@@ -16,8 +16,10 @@ NSApplication.shared.setActivationPolicy(.accessory)
 
 // Set up file logging so output is always available regardless of launch method
 let logPath = "/tmp/zwm.log"
-if FileManager.default.createFile(atPath: logPath, contents: nil),
-   let logFile = FileHandle(forWritingAtPath: logPath) {
+if !FileManager.default.fileExists(atPath: logPath) {
+    FileManager.default.createFile(atPath: logPath, contents: nil)
+}
+if let logFile = FileHandle(forWritingAtPath: logPath) {
     logFile.seekToEndOfFile()
     dup2(logFile.fileDescriptor, STDOUT_FILENO)
     dup2(logFile.fileDescriptor, STDERR_FILENO)
@@ -42,11 +44,17 @@ Task {
     }
 }
 
-// Periodic validation loop — syncs tree with OS reality
+// Event-processing loop — drains queued AX/NSWorkspace events every 500ms
+// and runs a full periodic validation (observer health + drift check) every 5s.
 Task {
+    var tick = 0
     while true {
         try? await Task.sleep(nanoseconds: 500_000_000) // every 500ms
-        await engine.periodicValidation()
+        await engine.processEvents()
+        tick += 1
+        if tick % 10 == 0 {
+            await engine.periodicValidation()
+        }
     }
 }
 

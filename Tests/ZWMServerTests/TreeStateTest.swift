@@ -228,6 +228,25 @@ private func insertTestWindow(
     #expect(t5.windowNode(children[1])!.windowId == 3)
 }
 
+@Test func moveWindowWithinTwoChildContainerKeepsContainerIntact() {
+    // Regression: moving a window within a 2-child container used to collapse
+    // the container before re-insertion, orphaning the moved window.
+    let (tree, wsId) = treeWithWorkspace()
+    let (t1, win1) = insertTestWindow(tree, parent: wsId, windowId: 1)
+    let t2 = t1.insertContainer(inParent: wsId, layout: .vertical)
+    let containerId = t2.workspaceNode(wsId)!.childIds.last!
+    let (t3, win2) = insertTestWindow(t2, parent: containerId, windowId: 2)
+    let (t4, win3) = insertTestWindow(t3, parent: containerId, windowId: 3)
+
+    let t5 = t4.moveNode(win2, toParent: containerId, atIndex: 2)
+
+    let container = t5.containerNode(containerId)
+    #expect(container != nil)
+    #expect(container?.childIds == [win3, win2])
+    #expect(t5.windowNode(win2)!.parentId == containerId)
+    #expect(t5.workspaceNode(wsId)!.childIds == [win1, containerId])
+}
+
 // MARK: - Container mutations
 
 @Test func insertContainerIntoWorkspace() {

@@ -6,6 +6,8 @@ TESTING_FLAGS=(
     -Xswiftc -F -Xswiftc /Library/Developer/CommandLineTools/Library/Developer/Frameworks
     -Xlinker -F -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks
     -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks
+    # Testing.framework loads lib_TestingInterop.dylib from here via @rpath
+    -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/usr/lib
 )
 
 if swift test "${TESTING_FLAGS[@]}" "$@"; then

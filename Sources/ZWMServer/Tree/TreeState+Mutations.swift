@@ -178,11 +178,11 @@ extension TreeState {
         guard let node = nodes[id], let _ = nodes[newParentId] else { return self }
 
         var nodes = self.nodes
+        let oldParentId = node.parentId
 
         // Remove from old parent
-        if let oldParentId = node.parentId, let oldParent = nodes[oldParentId] {
+        if let oldParentId, let oldParent = nodes[oldParentId] {
             nodes[oldParentId] = oldParent.removingChild(id)
-            TreeState.collapseSingleChildContainers(&nodes, startingAt: oldParentId)
         }
 
         // Update the node's parentId
@@ -198,6 +198,13 @@ extension TreeState {
         // Add to new parent's child list
         if let newParent = nodes[newParentId] {
             nodes[newParentId] = newParent.insertingChild(id, at: index)
+        }
+
+        // Collapse the old parent only after re-insertion, and only if the node
+        // actually left it — collapsing first would delete a 2-child container
+        // mid-move and orphan the node.
+        if let oldParentId, oldParentId != newParentId {
+            TreeState.collapseSingleChildContainers(&nodes, startingAt: oldParentId)
         }
 
         return with(nodes: nodes)

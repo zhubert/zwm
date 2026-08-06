@@ -471,14 +471,23 @@ public final class ServerEngine: @unchecked Sendable {
     /// which matches CGEvent.location and AX position attributes.
     public func focusWindowAtPoint(_ point: CGPoint) async {
         let windowId: UInt32? = withLock {
-            for (nodeId, frame) in lastLayout.frames {
-                guard frame.contains(point),
-                      let win = tree.windowNode(nodeId),
-                      tree.focusedWindowId != nodeId else { continue }
-                tree = tree.setFocus(nodeId)
-                return win.windowId
+            // If the pointer is over the focused window, don't steal focus for
+            // an overlapping window behind it.
+            if let focusedId = tree.focusedWindowId,
+               let focusedFrame = lastLayout.frames[focusedId],
+               focusedFrame.contains(point) {
+                return nil
             }
-            return nil
+
+            let hits = lastLayout.frames
+                .filter { $0.value.contains(point) }
+                .compactMap { nodeId, _ in tree.windowNode(nodeId) }
+
+            // Floating windows render above tiled ones — prefer them on overlap
+            let target = hits.first { if case .floating = $0.state { true } else { false } } ?? hits.first
+            guard let target else { return nil }
+            tree = tree.setFocus(target.id)
+            return target.windowId
         }
         if let windowId {
             try? await backend.focus(windowId)
