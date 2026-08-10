@@ -63,14 +63,17 @@ Task {
         tick += 1
         if tick % 10 == 0 {
             await engine.periodicValidation()
-            mouseTracker.checkHealth()
+            // Tap creation and run-loop-source changes belong on the main thread,
+            // where the tap callback also runs.
+            await MainActor.run { mouseTracker.checkHealth() }
         }
     }
 }
 
 // Focus follows mouse — passive mouse tracker
 if mouseTracker.start() {
-    print("zwm: focus-follows-mouse active")
+    let access = MouseTracker.hasInputMonitoringAccess ? "granted" : "NOT granted"
+    print("zwm: focus-follows-mouse active (Input Monitoring \(access))")
 } else {
     fputs("zwm: failed to create mouse event tap for focus-follows-mouse\n", stderr)
 }
