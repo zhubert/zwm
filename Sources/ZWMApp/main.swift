@@ -31,9 +31,18 @@ if let logFile = FileHandle(forWritingAtPath: logPath) {
 let backend = AXBackend()
 let engine = ServerEngine(backend: backend)
 
-// Start the engine (discovers windows, sets up observers)
+// Focus follows mouse — passive mouse tracker. Declared before the event loop
+// below, which polls it for tap health.
+let mouseTracker = MouseTracker { point in
+    Task { await engine.focusWindowAtPoint(point) }
+}
+
+// Start the engine (discovers windows, sets up observers).
+// Wait for the Accessibility API first: observers registered while AX is still
+// untrusted are created successfully but never deliver a single event.
 Task {
     do {
+        _ = await backend.waitUntilReady()
         try await engine.start()
         print("zwm: engine started (\(engine.currentTree.allWindows.count) windows discovered)")
     } catch {
@@ -54,14 +63,12 @@ Task {
         tick += 1
         if tick % 10 == 0 {
             await engine.periodicValidation()
+            mouseTracker.checkHealth()
         }
     }
 }
 
 // Focus follows mouse — passive mouse tracker
-let mouseTracker = MouseTracker { point in
-    Task { await engine.focusWindowAtPoint(point) }
-}
 if mouseTracker.start() {
     print("zwm: focus-follows-mouse active")
 } else {
