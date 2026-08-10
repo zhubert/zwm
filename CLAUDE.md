@@ -14,7 +14,12 @@ ZWM is a tiling window manager for macOS written in Swift. It uses an immutable 
 ./run-tests.sh                            # Run all tests (swift test with framework flags)
 swift test --filter TestClass/testMethod  # Run a single test
 make install                              # Release build + install to /Applications/ and /usr/local/bin/
+make signing-cert                         # One-time: self-signed identity so the Accessibility grant survives rebuilds
 ```
+
+Without a signing identity the bundle is ad-hoc signed, so TCC keys the
+Accessibility grant to a cdhash that changes on every build and the grant must
+be re-issued each install (`make reset-accessibility`, then re-grant).
 
 ## Architecture
 
