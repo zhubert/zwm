@@ -18,6 +18,17 @@ public final class AXBackend: @unchecked Sendable {
     private var elementCache: [UInt32: (pid: pid_t, element: AXUIElement)] = [:]
     /// Track last event time per PID to detect stale observers.
     private var lastEventByPid: [pid_t: Date] = [:]
+    /// When each app's observer was registered. Lets the health check age an
+    /// observer that has never delivered a single event.
+    private var observerRegisteredAt: [pid_t: Date] = [:]
+    /// PIDs whose observer failed to register one or more notifications. Such an
+    /// observer is dead on arrival and can never age out via event staleness.
+    private var failedRegistrations: Set<pid_t> = []
+    /// Last time the health check re-registered an observer, to bound retry noise.
+    private var lastObserverRetry: [pid_t: Date] = [:]
+
+    /// Minimum spacing between health-check re-registration attempts for one app.
+    private static let observerRetryInterval: TimeInterval = 15
 
     public init() {}
 
@@ -42,8 +53,12 @@ extension AXBackend: WindowBackend {
         var windows: [DiscoveredWindow] = []
         for app in appInfos {
             let appElement = AXUIElementCreateApplication(app.pid)
-            guard let windowElements = axArrayAttribute(appElement, kAXWindowsAttribute) else {
-                print("zwm: discoverWindows: \(app.name) (pid \(app.pid)) — no AX windows attribute")
+            var readError = AXError.success
+            guard let windowElements = axArrayAttribute(appElement, kAXWindowsAttribute, error: &readError) else {
+                // Log the code — apiDisabled (-25211) across every app means the
+                // process isn't AX-trusted, which is very different from an app
+                // that simply has no windows.
+                print("zwm: discoverWindows: \(app.name) (pid \(app.pid)) — no AX windows attribute (\(readError.rawValue))")
                 continue
             }
 
@@ -235,7 +250,8 @@ extension AXBackend: WindowBackend {
     }
 
     public func checkObserverHealth() async -> Int {
-        let staleCutoff = Date().addingTimeInterval(-30)
+        let now = Date()
+        let staleCutoff = now.addingTimeInterval(-30)
         let observedPids = withLock { Array(appObservers.keys) }
 
         // Check which apps are still running
@@ -251,20 +267,39 @@ extension AXBackend: WindowBackend {
             guard runningPids.contains(pid) else {
                 print("zwm: health: app \(pid) terminated without notification, cleaning up")
                 stopObservingApp(pid)
+                withLock { _ = lastObserverRetry.removeValue(forKey: pid) }
                 continue
             }
 
-            // Check if observer has gone stale (no events in 30s despite app running)
-            let lastEvent = withLock { lastEventByPid[pid] }
-            if let last = lastEvent, last < staleCutoff {
-                // Verify the observer is still functional by checking if we can read the app's windows
-                let appElement = AXUIElementCreateApplication(pid)
-                if axArrayAttribute(appElement, kAXWindowsAttribute) == nil {
-                    print("zwm: health: observer for pid \(pid) appears stale, re-registering")
-                    stopObservingApp(pid)
-                    startObservingApp(pid)
-                    reregistered += 1
-                }
+            // Don't retry the same app more often than the retry interval, so a
+            // permanently unobservable app can't flood the log every 5s.
+            let retryAllowed = withLock {
+                lastObserverRetry[pid].map { now.timeIntervalSince($0) >= Self.observerRetryInterval } ?? true
+            }
+            guard retryAllowed else { continue }
+
+            // An observer whose notification registration failed is dead on arrival:
+            // it will never deliver an event, so the staleness check below can never
+            // fire for it. Retry it unconditionally.
+            if withLock({ failedRegistrations.contains(pid) }) {
+                print("zwm: health: observer for pid \(pid) has failed registrations, re-registering")
+                withLock { lastObserverRetry[pid] = now }
+                stopObservingApp(pid)
+                startObservingApp(pid)
+                reregistered += 1
+                continue
+            }
+
+            // Age from the last event, or from registration time if the observer has
+            // never delivered one — a silently broken observer looks permanently
+            // "brand new" otherwise, and is never retried.
+            let lastActivity = withLock { lastEventByPid[pid] ?? observerRegisteredAt[pid] }
+            if let last = lastActivity, last < staleCutoff, !observerIsLive(pid) {
+                print("zwm: health: observer for pid \(pid) appears stale, re-registering")
+                withLock { lastObserverRetry[pid] = now }
+                stopObservingApp(pid)
+                startObservingApp(pid)
+                reregistered += 1
             }
         }
 
@@ -281,9 +316,72 @@ extension AXBackend: WindowBackend {
         return reregistered
     }
 
+    /// Probe whether an app's observer is actually functional.
+    ///
+    /// Re-adding a notification that is already registered returns
+    /// `.notificationAlreadyRegistered` on a live observer, and a hard error
+    /// (`.cannotComplete`, `.invalidUIElement`, …) on a dead one. This tests the
+    /// observer itself — reading `kAXWindowsAttribute` succeeds even when
+    /// notification delivery is broken, so it can't tell the two apart.
+    private func observerIsLive(_ pid: pid_t) -> Bool {
+        guard let observer = withLock({ appObservers[pid] }) else { return false }
+        let appElement = AXUIElementCreateApplication(pid)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let result = AXObserverAddNotification(
+            observer, appElement, kAXFocusedWindowChangedNotification as CFString, refcon
+        )
+        return result == .notificationAlreadyRegistered || result == .success
+    }
+
+    // MARK: - Accessibility readiness
+
+    /// Block until the Accessibility API actually answers, or `timeout` elapses.
+    ///
+    /// TCC grants can land a moment after launch — reinstalling the bundle re-keys
+    /// the entry, so the first seconds of a run can be untrusted. Registering AX
+    /// observers during that window produces observers that never fire, so the
+    /// engine must not start until this returns true.
+    public func waitUntilReady(timeout: TimeInterval = 60) async -> Bool {
+        if accessibilityIsFunctional() { return true }
+
+        // Prompt once, then poll — the user may need to grant permission by hand.
+        // Literal rather than kAXTrustedCheckOptionPrompt — the global is a `var`
+        // and so isn't concurrency-safe under Swift 6 strict checking.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+        print("zwm: waiting for Accessibility permission (trusted=\(AXIsProcessTrusted()))")
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if accessibilityIsFunctional() {
+                print("zwm: Accessibility API ready")
+                return true
+            }
+        }
+        print("zwm: Accessibility API still unavailable after \(Int(timeout))s — starting anyway")
+        return false
+    }
+
+    /// `AXIsProcessTrusted()` can flip true slightly before the AX API starts
+    /// answering, so probe a real read and treat `apiDisabled` as "not ready".
+    private func accessibilityIsFunctional() -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(
+            AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &value
+        )
+        // .noValue / .attributeUnsupported just mean nothing is focused right now.
+        return result != .apiDisabled && result != .notImplemented
+    }
+
     // MARK: - AX Observer per app
 
-    private func startObservingApp(_ pid: pid_t) {
+    /// Register an AX observer for an app. Returns true only if every notification
+    /// was registered — a partial failure means the observer is not trustworthy and
+    /// the pid is recorded so `checkObserverHealth` retries it.
+    @discardableResult
+    private func startObservingApp(_ pid: pid_t) -> Bool {
         var observer: AXObserver?
         let result = AXObserverCreate(
             pid,
@@ -295,7 +393,11 @@ extension AXBackend: WindowBackend {
             &observer
         )
 
-        guard result == .success, let observer else { return }
+        guard result == .success, let observer else {
+            print("zwm: observer: AXObserverCreate failed for pid \(pid): \(result.rawValue)")
+            // No entry in appObservers, so the health check's "new app" branch retries.
+            return false
+        }
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         let appElement = AXUIElementCreateApplication(pid)
@@ -310,8 +412,18 @@ extension AXBackend: WindowBackend {
             kAXWindowDeminiaturizedNotification,
         ]
 
+        var failures: [(String, AXError)] = []
         for name in notifications {
-            AXObserverAddNotification(observer, appElement, name as CFString, refcon)
+            let addResult = AXObserverAddNotification(observer, appElement, name as CFString, refcon)
+            // Already-registered is benign; anything else means this event never arrives.
+            if addResult != .success && addResult != .notificationAlreadyRegistered {
+                failures.append((name, addResult))
+            }
+        }
+
+        if !failures.isEmpty {
+            let detail = failures.map { "\($0.0)=\($0.1.rawValue)" }.joined(separator: " ")
+            print("zwm: observer: pid \(pid) failed \(failures.count)/\(notifications.count) notifications: \(detail)")
         }
 
         CFRunLoopAddSource(
@@ -320,12 +432,24 @@ extension AXBackend: WindowBackend {
             .commonModes
         )
 
-        withLock { appObservers[pid] = observer }
+        withLock {
+            appObservers[pid] = observer
+            observerRegisteredAt[pid] = Date()
+            if failures.isEmpty {
+                failedRegistrations.remove(pid)
+            } else {
+                failedRegistrations.insert(pid)
+            }
+        }
+        return failures.isEmpty
     }
 
     private func stopObservingApp(_ pid: pid_t) {
         let observer = withLock { () -> AXObserver? in
             let obs = appObservers.removeValue(forKey: pid)
+            observerRegisteredAt.removeValue(forKey: pid)
+            failedRegistrations.remove(pid)
+            lastEventByPid.removeValue(forKey: pid)
             // Remove cached elements for all windows of this app
             if let windowIds = knownWindowsByPid.removeValue(forKey: pid) {
                 for wid in windowIds {
@@ -437,8 +561,14 @@ extension AXBackend: WindowBackend {
     }
 
     private func axArrayAttribute(_ element: AXUIElement, _ attribute: String) -> [AXUIElement]? {
+        var ignored = AXError.success
+        return axArrayAttribute(element, attribute, error: &ignored)
+    }
+
+    private func axArrayAttribute(_ element: AXUIElement, _ attribute: String, error: inout AXError) -> [AXUIElement]? {
         var value: AnyObject?
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        error = result
         guard result == .success, let array = value as? [AXUIElement] else { return nil }
         return array
     }

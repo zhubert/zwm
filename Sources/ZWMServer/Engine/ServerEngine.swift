@@ -470,7 +470,9 @@ public final class ServerEngine: @unchecked Sendable {
     /// `point` must be in Quartz global screen coordinates (top-left origin, Y down),
     /// which matches CGEvent.location and AX position attributes.
     public func focusWindowAtPoint(_ point: CGPoint) async {
+        var frameCount = 0
         let windowId: UInt32? = withLock {
+            frameCount = lastLayout.frames.count
             // If the pointer is over the focused window, don't steal focus for
             // an overlapping window behind it.
             if let focusedId = tree.focusedWindowId,
@@ -490,7 +492,26 @@ public final class ServerEngine: @unchecked Sendable {
             return target.windowId
         }
         if let windowId {
+            print("zwm: focus-follows-mouse: focusing \(windowId) at (\(Int(point.x)), \(Int(point.y)))")
             try? await backend.focus(windowId)
+        } else if frameCount == 0 {
+            // Rate-limited: an empty layout means every mouse move is a guaranteed
+            // no-op, which otherwise looks identical to a dead event tap.
+            logEmptyLayoutMiss(point)
+        }
+    }
+
+    private var lastEmptyLayoutLog = Date.distantPast
+
+    private func logEmptyLayoutMiss(_ point: CGPoint) {
+        let now = Date()
+        let shouldLog = withLock { () -> Bool in
+            guard now.timeIntervalSince(lastEmptyLayoutLog) >= 10 else { return false }
+            lastEmptyLayoutLog = now
+            return true
+        }
+        if shouldLog {
+            print("zwm: focus-follows-mouse: no layout frames, ignoring move at (\(Int(point.x)), \(Int(point.y)))")
         }
     }
 
