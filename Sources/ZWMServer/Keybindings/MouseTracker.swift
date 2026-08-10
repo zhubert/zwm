@@ -22,8 +22,26 @@ public final class MouseTracker: @unchecked Sendable {
         self.handler = handler
     }
 
+    /// Whether the process may listen to input events.
+    ///
+    /// A CGEvent tap is governed by Input Monitoring (`kTCCServiceListenEvent`),
+    /// which is a *separate* grant from Accessibility. Without it `tapCreate`
+    /// still hands back a port, but the tap is permanently disabled — enabling it
+    /// silently has no effect.
+    public static var hasInputMonitoringAccess: Bool {
+        CGPreflightListenEventAccess()
+    }
+
     /// Start observing mouse movement. Must be called from the main thread.
     public func start() -> Bool {
+        if !CGPreflightListenEventAccess() {
+            // Prompts once and adds ZWM to System Settings → Privacy & Security →
+            // Input Monitoring. Returns immediately; the grant lands later, so the
+            // health check is what eventually builds a working tap.
+            print("zwm: Input Monitoring not granted — requesting (focus-follows-mouse needs it)")
+            _ = CGRequestListenEventAccess()
+        }
+
         let mask: CGEventMask = (1 << CGEventType.mouseMoved.rawValue)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(
@@ -90,12 +108,22 @@ public final class MouseTracker: @unchecked Sendable {
         guard now.timeIntervalSince(lastRecreate) >= Self.recreateInterval else { return false }
         lastRecreate = now
 
+        // Distinguish "no permission" from "tap genuinely broken" — without this the
+        // log just repeats the same recreate line forever with no cause.
+        guard CGPreflightListenEventAccess() else {
+            print("zwm: mouse tap dead (\(reason)) — Input Monitoring not granted, "
+                + "enable ZWM in System Settings → Privacy & Security → Input Monitoring")
+            teardown()
+            _ = CGRequestListenEventAccess()
+            return false
+        }
+
         teardown()
         if start() {
             print("zwm: mouse tap recreated (\(reason))")
             return true
         }
-        print("zwm: mouse tap recreate failed (\(reason)) — Accessibility permission missing?")
+        print("zwm: mouse tap recreate failed (\(reason)) — tapCreate returned nil")
         return false
     }
 
