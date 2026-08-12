@@ -12,6 +12,13 @@ public final class MouseTracker: @unchecked Sendable {
     /// Minimum spacing between attempts to rebuild a tap that won't re-enable.
     private static let recreateInterval: TimeInterval = 15
 
+    // Focus is only fired once the cursor has been still for this long, so a
+    // fast pass over a menu bar or a click into a modal that briefly crosses
+    // another window doesn't steal focus mid-motion.
+    private var settleTimer: Timer?
+    private var pendingPoint: CGPoint?
+    private static let settleDelay: TimeInterval = 0.15
+
     // Rate-limited activity logging so a silent tap is distinguishable from a
     // tap that fires but whose points don't hit any managed window.
     private var moveCount = 0
@@ -63,7 +70,7 @@ public final class MouseTracker: @unchecked Sendable {
                 }
 
                 tracker.recordMove(event.location)
-                tracker.handler(event.location)
+                tracker.scheduleFocus(at: event.location)
                 return nil
             },
             userInfo: refcon
@@ -137,6 +144,20 @@ public final class MouseTracker: @unchecked Sendable {
         }
         runLoopSource = nil
         eventTap = nil
+        settleTimer?.invalidate()
+        settleTimer = nil
+        pendingPoint = nil
+    }
+
+    /// Restart the settle timer on every move; only the point where the cursor
+    /// finally comes to rest reaches `handler`.
+    private func scheduleFocus(at point: CGPoint) {
+        pendingPoint = point
+        settleTimer?.invalidate()
+        settleTimer = Timer.scheduledTimer(withTimeInterval: Self.settleDelay, repeats: false) { [weak self] _ in
+            guard let self, let point = self.pendingPoint else { return }
+            self.handler(point)
+        }
     }
 
     private func reenable() {
