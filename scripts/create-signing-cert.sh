@@ -50,7 +50,16 @@ openssl req -x509 -newkey rsa:2048 -nodes -days "$DAYS" \
 # failed"), so use a throwaway passphrase — the file lives only in $WORK_DIR.
 P12_PASS="$(uuidgen)"
 
-openssl pkcs12 -export \
+# OpenSSL 3.x defaults to AES-256/SHA-256 for PKCS#12, which macOS's
+# `security import` can't parse — it fails with "MAC verification failed
+# (wrong password?)" even with the right password. -legacy produces the
+# RC2/3DES format macOS expects.
+LEGACY_FLAG=()
+if openssl pkcs12 -help 2>&1 | grep -q -- -legacy; then
+    LEGACY_FLAG=(-legacy)
+fi
+
+openssl pkcs12 -export "${LEGACY_FLAG[@]}" \
     -inkey "${WORK_DIR}/key.pem" \
     -in "${WORK_DIR}/cert.pem" \
     -out "${WORK_DIR}/identity.p12" \
