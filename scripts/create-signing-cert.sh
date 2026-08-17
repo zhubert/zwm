@@ -12,7 +12,10 @@
 # Run once. Idempotent — exits early if the identity already exists.
 set -euo pipefail
 
-CERT_NAME="${ZWM_SIGNING_IDENTITY:-ZWM Signing}"
+CERT_NAME="${ZWM_SIGNING_IDENTITY:-}"
+if [ -z "$CERT_NAME" ]; then
+    CERT_NAME="Zack's Window Manager Signing"
+fi
 KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
 DAYS=3650
 

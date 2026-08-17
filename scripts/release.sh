@@ -179,7 +179,7 @@ class Zwm < Formula
     # Sign with a stable identity if one exists locally, so the Accessibility /
     # Input Monitoring grants survive future \`brew upgrade\`s instead of being
     # invalidated by a new ad-hoc cdhash each time.
-    signing_identity = "ZWM Signing"
+    signing_identity = "Zack's Window Manager Signing"
     identities = Utils.safe_popen_read("security", "find-identity", "-v", "-p", "codesigning")
     has_identity = identities.include?(signing_identity)
 

@@ -27,7 +27,10 @@ cp "${BUILD_DIR}/zwm" ".release/zwm"
 # designated requirement constant across rebuilds, so the Accessibility grant
 # persists instead of being invalidated by every new cdhash.
 # Create the identity with: ./scripts/create-signing-cert.sh
-SIGNING_IDENTITY="${ZWM_SIGNING_IDENTITY:-ZWM Signing}"
+SIGNING_IDENTITY="${ZWM_SIGNING_IDENTITY:-}"
+if [ -z "$SIGNING_IDENTITY" ]; then
+    SIGNING_IDENTITY="Zack's Window Manager Signing"
+fi
 if security find-identity -v -p codesigning | grep -qF "$SIGNING_IDENTITY"; then
     echo "=== Signing bundle with '$SIGNING_IDENTITY' ==="
     codesign --force --sign "$SIGNING_IDENTITY" --identifier "com.zhubert.zwm" \
