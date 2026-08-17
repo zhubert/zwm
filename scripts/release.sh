@@ -181,7 +181,20 @@ class Zwm < Formula
     # invalidated by a new ad-hoc cdhash each time.
     signing_identity = "ZWM Signing"
     identities = Utils.safe_popen_read("security", "find-identity", "-v", "-p", "codesigning")
-    if identities.include?(signing_identity)
+    has_identity = identities.include?(signing_identity)
+
+    if !has_identity && \$stdin.tty?
+      print "Create a local code-signing identity so Accessibility/Input " \\
+            "Monitoring grants survive future upgrades? [Y/n] "
+      answer = \$stdin.gets.to_s.strip
+      if answer.empty? || answer =~ /\\Ay/i
+        system "bash", "#{buildpath}/scripts/create-signing-cert.sh"
+        identities = Utils.safe_popen_read("security", "find-identity", "-v", "-p", "codesigning")
+        has_identity = identities.include?(signing_identity)
+      end
+    end
+
+    if has_identity
       system "codesign", "--force", "--sign", signing_identity, "--identifier", "com.zhubert.zwm",
              "--timestamp=none", app_bundle
     else
