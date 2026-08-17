@@ -54,12 +54,14 @@ P12_PASS="$(uuidgen)"
 # `security import` can't parse — it fails with "MAC verification failed
 # (wrong password?)" even with the right password. -legacy produces the
 # RC2/3DES format macOS expects.
-LEGACY_FLAG=()
+# macOS ships /bin/bash 3.2, whose `set -u` treats an empty array expansion
+# as an unbound variable, so use a plain string flag instead of an array.
+LEGACY_FLAG=""
 if openssl pkcs12 -help 2>&1 | grep -q -- -legacy; then
-    LEGACY_FLAG=(-legacy)
+    LEGACY_FLAG="-legacy"
 fi
 
-openssl pkcs12 -export "${LEGACY_FLAG[@]}" \
+openssl pkcs12 -export ${LEGACY_FLAG} \
     -inkey "${WORK_DIR}/key.pem" \
     -in "${WORK_DIR}/cert.pem" \
     -out "${WORK_DIR}/identity.p12" \
