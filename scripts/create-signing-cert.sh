@@ -18,6 +18,17 @@ if [ -z "$CERT_NAME" ]; then
 fi
 DAYS=3650
 
+# Homebrew's build sandbox runs `install` with $HOME pointed at a throwaway
+# build directory, which makes every `security` keychain lookup below fail
+# ("a default keychain could not be found") even though the real login
+# keychain is fine. Re-point HOME at the real user's home — resolved via
+# directory services, not the (possibly-overridden) $HOME — before touching
+# the keychain.
+REAL_HOME="$(eval echo ~"$(id -un)")"
+if [ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ]; then
+    export HOME="$REAL_HOME"
+fi
+
 # Resolve the user's actual default keychain rather than assuming the
 # filename — it's usually login.keychain-db, but security(1) is the source
 # of truth and this avoids "keychain could not be found" when it isn't.
