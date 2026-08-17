@@ -17,7 +17,13 @@ public final class MouseTracker: @unchecked Sendable {
     // another window doesn't steal focus mid-motion.
     private var settleTimer: Timer?
     private var pendingPoint: CGPoint?
+    // The point the current settle timer is waiting out. Only a move that
+    // clears the jitter radius from this point rearms the timer — otherwise
+    // the trackpad's sub-pixel noise while the hand is at rest would keep
+    // resetting the timer forever and focus would never settle.
+    private var armedPoint: CGPoint?
     private static let settleDelay: TimeInterval = 0.15
+    private static let settleJitterRadius: CGFloat = 4
 
     // Rate-limited activity logging so a silent tap is distinguishable from a
     // tap that fires but whose points don't hit any managed window.
@@ -147,15 +153,29 @@ public final class MouseTracker: @unchecked Sendable {
         settleTimer?.invalidate()
         settleTimer = nil
         pendingPoint = nil
+        armedPoint = nil
     }
 
-    /// Restart the settle timer on every move; only the point where the cursor
+    /// Rearm the settle timer only when the cursor has moved past the jitter
+    /// radius since the last arming point; only the point where the cursor
     /// finally comes to rest reaches `handler`.
     private func scheduleFocus(at point: CGPoint) {
         pendingPoint = point
+
+        if let armedPoint {
+            let dx = point.x - armedPoint.x
+            let dy = point.y - armedPoint.y
+            if (dx * dx + dy * dy) < (Self.settleJitterRadius * Self.settleJitterRadius) {
+                // Within jitter of the last real move — let the pending timer run.
+                return
+            }
+        }
+
+        armedPoint = point
         settleTimer?.invalidate()
         settleTimer = Timer.scheduledTimer(withTimeInterval: Self.settleDelay, repeats: false) { [weak self] _ in
             guard let self, let point = self.pendingPoint else { return }
+            self.armedPoint = nil
             self.handler(point)
         }
     }
