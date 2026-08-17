@@ -2,8 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="zwm"
-BUNDLE_DIR=".release/${APP_NAME}.app"
+# Bundle name is capitalised to match the Makefile, the Homebrew formula and the
+# release archive. It used to be lowercase and only worked because APFS is
+# case-insensitive — inside a tarball the case matters.
+BUNDLE_DIR=".release/ZWM.app"
 BUILD_DIR=".build/release"
 
 echo "=== Building release binary ==="
@@ -42,9 +44,23 @@ else
     echo "    Run ./scripts/create-signing-cert.sh once to fix this."
 fi
 
+# Package the signed bundle for distribution. The Homebrew formula installs this
+# archive directly instead of building from source: brew's build sandbox denies
+# reads of ~/Library/Keychains, so it cannot sign anything itself. Signing has to
+# happen here, once, on a machine that owns the identity.
+echo "=== Packaging distribution archive ==="
+ARCH="$(uname -m)"
+ARCHIVE=".release/zwm-macos-${ARCH}.tar.gz"
+rm -f "$ARCHIVE"
+# COPYFILE_DISABLE stops bsdtar emitting ._ AppleDouble entries for the bundle's
+# xattrs. The signature itself lives in the Mach-O and _CodeSignature/, not in
+# xattrs, so it survives a plain tar.
+COPYFILE_DISABLE=1 tar -czf "$ARCHIVE" -C .release "ZWM.app" "zwm"
+
 echo "=== Done ==="
 echo "App bundle: ${BUNDLE_DIR}"
 echo "CLI binary: .release/zwm"
+echo "Archive:    ${ARCHIVE}"
 echo ""
 echo "To install:"
 echo "  cp -r ${BUNDLE_DIR} /Applications/"

@@ -117,38 +117,80 @@ if [ ! -d "$TAP_REPO/Formula" ]; then
 fi
 echo "  Homebrew tap: found"
 
+# The release artifact is signed here, on this machine. brew cannot do it at
+# install time — its build sandbox denies reads of ~/Library/Keychains, so the
+# identity is invisible there. Without a signature the bundle is ad-hoc, its
+# designated requirement is a cdhash, and every upgrade invalidates the user's
+# Accessibility grant. So refuse to cut a release we can't sign.
+# Set via `if` rather than ${VAR:-default}: the apostrophe in the default value
+# opens a quote context inside the braces and breaks the parse.
+SIGNING_IDENTITY="${ZWM_SIGNING_IDENTITY:-}"
+if [ -z "$SIGNING_IDENTITY" ]; then
+    SIGNING_IDENTITY="Zack's Window Manager Signing"
+fi
+if ! security find-identity -v -p codesigning | grep -qF "$SIGNING_IDENTITY"; then
+    echo -e "${RED}Error: signing identity '$SIGNING_IDENTITY' not found${NC}"
+    echo "Run once: ./scripts/create-signing-cert.sh"
+    exit 1
+fi
+echo "  Signing identity: found"
+
 echo ""
 echo -e "${GREEN}Prerequisites check passed${NC}"
 
 if [ "$DRY_RUN" = true ]; then
     echo ""
     echo -e "${YELLOW}Dry run - would perform:${NC}"
-    echo "  1. Create and push tag $VERSION"
-    echo "  2. Create GitHub release $VERSION"
-    echo "  3. Update homebrew-tap formula with new version and SHA"
-    echo "  4. Commit and push homebrew-tap"
+    echo "  1. Build and sign the release artifact"
+    echo "  2. Create and push tag $VERSION"
+    echo "  3. Create GitHub release $VERSION and upload the artifact"
+    echo "  4. Update homebrew-tap formula with new version, URL and SHA"
+    echo "  5. Commit and push homebrew-tap"
     exit 0
 fi
 
-# Step 1: Tag and push
+# Step 1: Build and sign the artifact. Done before tagging so a build failure
+# doesn't leave a dangling tag behind.
 echo ""
-echo "Step 1: Creating and pushing tag ${VERSION}..."
+echo "Step 1: Building and signing release artifact..."
+./build-release.sh > /dev/null
+ARCH="$(uname -m)"
+ARCHIVE=".release/zwm-macos-${ARCH}.tar.gz"
+
+if [ ! -f "$ARCHIVE" ]; then
+    echo -e "${RED}Error: build did not produce $ARCHIVE${NC}"
+    exit 1
+fi
+
+if codesign -dv .release/ZWM.app 2>&1 | grep -q "Signature=adhoc"; then
+    echo -e "${RED}Error: bundle is ad-hoc signed, refusing to release${NC}"
+    echo "The Accessibility grant would break on every upgrade."
+    exit 1
+fi
+codesign --verify --strict .release/ZWM.app
+echo "  Signed and verified"
+
+ASSET="zwm-${VERSION}-macos-${ARCH}.tar.gz"
+ASSET_DIR="$(mktemp -d)"
+ASSET_PATH="${ASSET_DIR}/${ASSET}"
+cp "$ARCHIVE" "$ASSET_PATH"
+SHA256=$(shasum -a 256 "$ASSET_PATH" | awk '{print $1}')
+ASSET_URL="https://github.com/zhubert/zwm/releases/download/${VERSION}/${ASSET}"
+echo "  Artifact: $ASSET"
+echo "  SHA256:   $SHA256"
+
+# Step 2: Tag and push
+echo ""
+echo "Step 2: Creating and pushing tag ${VERSION}..."
 git tag "$VERSION"
 git push origin "$VERSION"
 echo "  Done"
 
-# Step 2: Create GitHub release
+# Step 3: Create GitHub release with the signed artifact attached
 echo ""
-echo "Step 2: Creating GitHub release..."
-gh release create "$VERSION" --title "$VERSION" --generate-notes
+echo "Step 3: Creating GitHub release and uploading artifact..."
+gh release create "$VERSION" --title "$VERSION" --generate-notes "$ASSET_PATH"
 echo "  Done"
-
-# Step 3: Get SHA256 of source tarball
-echo ""
-echo "Step 3: Getting source tarball SHA256..."
-TARBALL_URL="https://github.com/zhubert/zwm/archive/refs/tags/${VERSION}.tar.gz"
-SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
-echo "  SHA256: $SHA256"
 
 # Step 4: Update Homebrew formula
 echo ""
@@ -160,51 +202,27 @@ cat > "$FORMULA_PATH" << FORMULA
 class Zwm < Formula
   desc "Tiling window manager for macOS"
   homepage "https://github.com/zhubert/zwm"
-  url "https://github.com/zhubert/zwm/archive/refs/tags/${VERSION}.tar.gz"
+  url "${ASSET_URL}"
   sha256 "${SHA256}"
   version "${VERSION_NUM}"
+  license "MIT"
 
   depends_on :macos
+  depends_on arch: :arm64
 
+  # This ships a prebuilt bundle that was code-signed at release time rather than
+  # building from source. brew cannot sign anything itself: its build sandbox
+  # denies reads of ~/Library/Keychains, so the signing identity is invisible
+  # there. An ad-hoc signature would key the Accessibility grant to a cdhash that
+  # changes every version, forcing a re-grant on each upgrade. Signing once,
+  # upstream, gives a stable designated requirement so the grant persists.
+  #
+  # Formula rather than cask on purpose: formulae don't set the quarantine
+  # attribute, so a self-signed bundle never faces a Gatekeeper prompt, and
+  # \`service\` keeps \`brew services\` working (casks have no launchd support).
   def install
-    system "swift", "build", "-c", "release", "--disable-sandbox"
-
-    # Install server as app bundle (for Accessibility TCC grouping)
-    app_bundle = prefix/"ZWM.app"
-    mkdir_p app_bundle/"Contents/MacOS"
-    mkdir_p app_bundle/"Contents/Resources"
-    cp buildpath/".build/release/zwm-server", app_bundle/"Contents/MacOS/zwm-server"
-    cp "resources/Info.plist", app_bundle/"Contents/Info.plist"
-
-    # Sign with a stable identity if one exists locally, so the Accessibility /
-    # Input Monitoring grants survive future \`brew upgrade\`s instead of being
-    # invalidated by a new ad-hoc cdhash each time.
-    signing_identity = "Zack's Window Manager Signing"
-    identities = Utils.safe_popen_read("security", "find-identity", "-v", "-p", "codesigning")
-    has_identity = identities.include?(signing_identity)
-
-    if !has_identity && \$stdin.tty?
-      print "Create a local code-signing identity so Accessibility/Input " \\
-            "Monitoring grants survive future upgrades? [Y/n] "
-      answer = \$stdin.gets.to_s.strip
-      if answer.empty? || answer =~ /\\Ay/i
-        system "bash", "#{buildpath}/scripts/create-signing-cert.sh"
-        identities = Utils.safe_popen_read("security", "find-identity", "-v", "-p", "codesigning")
-        has_identity = identities.include?(signing_identity)
-      end
-    end
-
-    if has_identity
-      system "codesign", "--force", "--sign", signing_identity, "--identifier", "com.zhubert.zwm",
-             "--timestamp=none", app_bundle
-    else
-      opoo "No '#{signing_identity}' identity found — leaving ad-hoc signature. " \\
-           "Accessibility/Input Monitoring must be re-granted after every upgrade. " \\
-           "Run the zwm repo's scripts/create-signing-cert.sh once to fix this."
-    end
-
-    # Install CLI
-    bin.install ".build/release/zwm"
+    prefix.install "ZWM.app"
+    bin.install "zwm"
   end
 
   service do
@@ -222,6 +240,10 @@ class Zwm < Formula
 
       Start the service with:
         brew services start zwm
+
+      The bundle is signed with a stable identity, so this grant survives future
+      upgrades. If you are coming from a version installed before ZWM was signed,
+      you need to re-grant Accessibility once more.
     EOS
   end
 

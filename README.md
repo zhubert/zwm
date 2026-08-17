@@ -20,6 +20,8 @@ ZWM automatically arranges your windows into an equal-sized grid layout. It supp
 ## Requirements
 
 - macOS 14 (Sonoma) or later
+- Apple silicon (the Homebrew formula ships a prebuilt arm64 bundle; Intel Macs
+  need to build from source)
 - Accessibility permission (System Settings > Privacy & Security > Accessibility)
 
 ## Install
@@ -34,7 +36,9 @@ Start ZWM as a background service:
 brew services start zwm
 ```
 
-Then grant Accessibility permission when prompted.
+Then grant Accessibility permission when prompted. The released bundle is
+code-signed with a stable identity, so the grant survives later `brew upgrade`s
+rather than needing to be re-issued each time.
 
 To stop:
 
