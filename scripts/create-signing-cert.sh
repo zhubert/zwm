@@ -6,7 +6,7 @@
 # `make install` had to reset the grant and re-prompt every single time.
 #
 # Signing with a *stable* certificate makes the designated requirement
-# ("identifier com.zwm.app and certificate leaf = <this cert>") constant across
+# ("identifier com.zhubert.zwm and certificate leaf = <this cert>") constant across
 # rebuilds, so the Accessibility grant survives them.
 #
 # Run once. Idempotent — exits early if the identity already exists.

@@ -30,7 +30,7 @@ cp "${BUILD_DIR}/zwm" ".release/zwm"
 SIGNING_IDENTITY="${ZWM_SIGNING_IDENTITY:-ZWM Signing}"
 if security find-identity -v -p codesigning | grep -qF "$SIGNING_IDENTITY"; then
     echo "=== Signing bundle with '$SIGNING_IDENTITY' ==="
-    codesign --force --sign "$SIGNING_IDENTITY" --identifier "com.zwm.app" \
+    codesign --force --sign "$SIGNING_IDENTITY" --identifier "com.zhubert.zwm" \
         --timestamp=none "${BUNDLE_DIR}"
     codesign --verify --verbose=2 "${BUNDLE_DIR}"
 else

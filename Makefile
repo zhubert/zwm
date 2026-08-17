@@ -20,7 +20,7 @@ signing-cert:
 # Only needed for ad-hoc builds, or to force a clean re-prompt. Signed builds
 # keep their grant across rebuilds, so this is no longer part of `install`.
 reset-accessibility:
-	tccutil reset Accessibility com.zwm.app || true
+	tccutil reset Accessibility com.zhubert.zwm || true
 	@echo "Reset Accessibility grant for ZWM. You will be re-prompted on next launch."
 
 install: release

@@ -176,6 +176,20 @@ class Zwm < Formula
     cp buildpath/".build/release/zwm-server", app_bundle/"Contents/MacOS/zwm-server"
     cp "resources/Info.plist", app_bundle/"Contents/Info.plist"
 
+    # Sign with a stable identity if one exists locally, so the Accessibility /
+    # Input Monitoring grants survive future \`brew upgrade\`s instead of being
+    # invalidated by a new ad-hoc cdhash each time.
+    signing_identity = "ZWM Signing"
+    identities = Utils.safe_popen_read("security", "find-identity", "-v", "-p", "codesigning")
+    if identities.include?(signing_identity)
+      system "codesign", "--force", "--sign", signing_identity, "--identifier", "com.zhubert.zwm",
+             "--timestamp=none", app_bundle
+    else
+      opoo "No '#{signing_identity}' identity found — leaving ad-hoc signature. " \\
+           "Accessibility/Input Monitoring must be re-granted after every upgrade. " \\
+           "Run the zwm repo's scripts/create-signing-cert.sh once to fix this."
+    end
+
     # Install CLI
     bin.install ".build/release/zwm"
   end

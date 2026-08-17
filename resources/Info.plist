@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>zwm-server</string>
     <key>CFBundleIdentifier</key>
-    <string>com.zwm.app</string>
+    <string>com.zhubert.zwm</string>
     <key>CFBundleName</key>
     <string>zwm</string>
     <key>CFBundleDisplayName</key>
