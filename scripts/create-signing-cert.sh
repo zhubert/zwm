@@ -16,8 +16,17 @@ CERT_NAME="${ZWM_SIGNING_IDENTITY:-}"
 if [ -z "$CERT_NAME" ]; then
     CERT_NAME="Zack's Window Manager Signing"
 fi
-KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
 DAYS=3650
+
+# Resolve the user's actual default keychain rather than assuming the
+# filename — it's usually login.keychain-db, but security(1) is the source
+# of truth and this avoids "keychain could not be found" when it isn't.
+KEYCHAIN="$(security default-keychain -d user 2>/dev/null | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')"
+if [ -z "$KEYCHAIN" ] || [ ! -f "$KEYCHAIN" ]; then
+    echo "Could not resolve a default keychain for this user." >&2
+    echo "Unlock/create your login keychain (Keychain Access.app) and re-run this script." >&2
+    exit 1
+fi
 
 if security find-identity -v -p codesigning | grep -qF "$CERT_NAME"; then
     echo "Signing identity '$CERT_NAME' already exists — nothing to do."
