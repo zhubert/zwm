@@ -65,7 +65,7 @@ Task {
             await engine.periodicValidation()
             // Tap creation and run-loop-source changes belong on the main thread,
             // where the tap callback also runs.
-            await MainActor.run { mouseTracker.checkHealth() }
+            _ = await MainActor.run { mouseTracker.checkHealth() }
         }
     }
 }
