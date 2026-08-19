@@ -498,10 +498,38 @@ extension AXBackend: WindowBackend {
                     elementCache.removeValue(forKey: windowId)
                 }
                 emit(.windowDestroyed(windowId: windowId))
+            } else if pid != 0 {
+                // The destroyed element itself is already invalid, so
+                // _AXUIElementGetWindow can't resolve its window id — this happens for
+                // real window closes, not just non-window elements like tabs. Diff the
+                // app's current AX windows against what we last knew about it to find
+                // which window id actually disappeared, so we don't have to wait for
+                // the periodic validation fallback to notice.
+                let appElement = AXUIElementCreateApplication(pid)
+                let liveIds: Set<UInt32> = {
+                    guard let windows = axArrayAttribute(appElement, kAXWindowsAttribute) else { return [] }
+                    var ids: Set<UInt32> = []
+                    for win in windows {
+                        var wid: UInt32 = 0
+                        if _AXUIElementGetWindow(win, &wid) == .success, wid != 0 {
+                            ids.insert(wid)
+                        }
+                    }
+                    return ids
+                }()
+                let missingIds: Set<UInt32> = withLock {
+                    let known = knownWindowsByPid[pid, default: []]
+                    let missing = known.subtracting(liveIds)
+                    knownWindowsByPid[pid] = known.subtracting(missing)
+                    for wid in missing {
+                        elementCache.removeValue(forKey: wid)
+                    }
+                    return missing
+                }
+                for wid in missingIds {
+                    emit(.windowDestroyed(windowId: wid))
+                }
             }
-            // When windowId==0, the destroyed element is not a window (e.g. a tab).
-            // Don't try to detect which window is gone — AX and CGWindowList are unreliable
-            // during tab transitions. The reconcile loop will catch truly destroyed windows.
         case kAXFocusedWindowChangedNotification:
             if windowId != 0 { emit(.windowFocused(windowId: windowId)) }
         case kAXWindowMovedNotification:
